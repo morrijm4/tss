@@ -1,6 +1,3 @@
-simple.hex: simple
-	xxd simple > simple.hex
-
 simple: simple.o
 	ld -arch arm64 \
 	   -e _main \
