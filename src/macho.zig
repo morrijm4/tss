@@ -7,7 +7,7 @@ const Magic = @import("./magic.zig").Magic;
 pub const MachO = @This();
 
 header: Header,
-loadCommands: std.ArrayList(LoadCommand),
+loadCommands: []const u8,
 
 const Header = packed struct {
     magic: u32,
@@ -15,7 +15,7 @@ const Header = packed struct {
     cpuSubtype: u32,
     fileType: u32,
     numLoadCommands: u32,
-    loadCommandSize: u32,
+    loadCommandsSize: u32,
     flags: u32,
     reserved: u32,
 };
@@ -40,23 +40,13 @@ pub fn init(allocator: std.mem.Allocator, reader: *Io.Reader, options: InitOptio
     const endian = options.endian;
     const header = try reader.takeStruct(Header, endian);
 
-    var macho: MachO = .{
+    const loadCommands = try reader.readAlloc(allocator, header.loadCommandsSize);
+    errdefer allocator.free(loadCommands);
+
+    const macho: MachO = .{
         .header = header,
-        .loadCommands = .empty,
+        .loadCommands = loadCommands,
     };
-
-    var total: u32 = 0;
-    for (0..header.numLoadCommands) |i| {
-        _ = i;
-
-        const loadCommand = try reader.takeStruct(LoadCommand, endian);
-        try reader.discardAll(loadCommand.commandSize - @sizeOf(LoadCommand));
-
-        total += loadCommand.commandSize;
-        try macho.loadCommands.append(allocator, loadCommand);
-    }
-
-    if (total != header.loadCommandSize) return InitError.InvalidFormat;
 
     return macho;
 }
@@ -68,12 +58,21 @@ pub fn print(self: *const MachO, writer: *Io.Writer) error{WriteFailed}!void {
     try writer.print("CPU Subtype => 0x{x:0>8}\n", .{h.cpuSubtype});
     try writer.print("File type => 0x{x:0>8}\n", .{h.fileType});
     try writer.print("Number of load commands => {}\n", .{h.numLoadCommands});
-    try writer.print("Load commands size => {}\n", .{h.loadCommandSize});
+    try writer.print("Load commands size => {}\n", .{h.loadCommandsSize});
     try writer.print("Flags => 0b{b:0>32}\n", .{h.flags});
     try writer.print("\n", .{});
 
     try writer.print("Load Commands:\n", .{});
-    for (self.loadCommands.items, 1..) |lc, i| {
-        try writer.print("{}. Command => 0x{x:0>8}, Size => {}\n", .{ i, lc.command, lc.commandSize });
+
+    var i: u32 = 0;
+    var j: u32 = 1;
+    while (i < h.loadCommandsSize) : (j += 1) {
+        // TODO: handle out of bounds
+        const cmdType: u32 = @bitCast(self.loadCommands[i..][0..4].*);
+        const cmdSize: u32 = @bitCast(self.loadCommands[i + 4 ..][0..4].*);
+
+        i += cmdSize;
+
+        try writer.print("{}. Command => 0x{x:0>8}, Size => {}\n", .{ j, cmdType, cmdSize });
     }
 }
