@@ -12,11 +12,11 @@ pub fn main(init: std.process.Init) !void {
     var reader = Io.File.stdin().reader(io, &buf);
     const r = &reader.interface;
 
-    const bin = try tss.macho.init(arena, r, .{});
+    var macho = try tss.macho.init(arena, r, .{});
 
-    var file_writer = Io.File.stdout().writer(io, &buf);
-    var w = &file_writer.interface;
+    var stdoutWriter = Io.File.stdout().writer(io, &buf);
+    var w = &stdoutWriter.interface;
 
-    try bin.print(w);
+    try macho.print(w);
     try w.flush();
 }
