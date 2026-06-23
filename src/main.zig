@@ -12,8 +12,6 @@ pub fn main(init: std.process.Init) !void {
     var reader = Io.File.stdin().reader(io, &buf);
     const r = &reader.interface;
 
-    const magic = try r.peekInt(u32, .native);
-    try tss.magic.assertMagic(magic);
     const bin = try tss.macho.init(arena, r, .{});
 
     var file_writer = Io.File.stdout().writer(io, &buf);

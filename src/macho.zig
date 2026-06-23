@@ -2,7 +2,7 @@ const std = @import("std");
 const Io = std.Io;
 const log = std.log.scoped(.macho);
 
-const Magic = @import("./magic.zig").Magic;
+const magic = @import("./magic.zig");
 
 pub const MachO = @This();
 
@@ -29,15 +29,20 @@ pub const InitOptions = struct {
     endian: std.builtin.Endian = .native,
 };
 
-const InitError = error{
+const MachoInitError = error{
     ReadFailed,
     EndOfStream,
-    InvalidFormat,
     OutOfMemory,
+    InvalidFormat,
+    InvalidMagic,
 };
 
-pub fn init(allocator: std.mem.Allocator, reader: *Io.Reader, options: InitOptions) InitError!MachO {
+pub fn init(allocator: std.mem.Allocator, reader: *Io.Reader, options: InitOptions) MachoInitError!MachO {
     const endian = options.endian;
+
+    const m = try reader.peekInt(u32, .native);
+    try magic.assertMagic(m);
+
     const header = try reader.takeStruct(Header, endian);
 
     const loadCommands = try reader.readAlloc(allocator, header.loadCommandsSize);
