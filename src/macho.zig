@@ -50,7 +50,7 @@ pub fn print(self: *MachO, writer: *Io.Writer) error{ WriteFailed, InvalidMachO 
 
     try writer.print("Load Commands:\n", .{});
     while (try self.loadCommands.next()) |lc| {
-        try writer.print("* Command => 0x{x:0>8}, Header Size => {}, Size => {}\n", .{ lc.hdr.cmd, @sizeOf(SegmentCommand64), lc.hdr.cmdsize });
+        try writer.print("* Command => {} (0x{x:0>8}), Header Size => {}, Size => {}\n", .{ lc.hdr.cmd, lc.hdr.cmd, @sizeOf(SegmentCommand64), lc.hdr.cmdsize });
         switch (lc.hdr.cmd) {
             .SEGMENT_64 => try printSegmentCommand64(lc, writer),
             .BUILD_VERSION => try printBuildVersionCommand(lc, writer),
@@ -81,12 +81,39 @@ pub fn printSegmentCommand64(lc: LoadCommand, writer: *Io.Writer) Io.Writer.Erro
     try writer.print("\t- Initial VM Protection => {}\n", .{cmd.initprot});
     try writer.print("\t- Number of Sections => {d}\n", .{cmd.nsects});
     try writer.print("\t- Flags => 0b{b:0>32}\n", .{cmd.flags});
+    try writer.print("\t- Sections:\n", .{});
+
+    const sections = lc.getSections();
+    for (sections) |section| {
+        try writer.print("\t\t> Section Name => {s}\n", .{section.sectName()});
+        try writer.print("\t\t> Segment Name => {s}\n", .{section.segName()});
+        try writer.print("\t\t> Section Address => 0x{x:0>16}\n", .{section.addr});
+        try writer.print("\t\t> Section File Offset => {d}\n", .{section.offset});
+        try writer.print("\t\t> Alignment => {d}\n", .{section.@"align"});
+        try writer.print("\t\t> Relocations File Offset => {d}\n", .{section.reloff});
+        try writer.print("\t\t> Number of Relocations => {d}\n", .{section.nreloc});
+        try writer.print("\t\t> Flags/Type => 0b{b:0>32}\n", .{section.flags});
+        try writer.print("\t\t> Reserved1 => {d}\n", .{section.reserved1});
+        try writer.print("\t\t> Reserved2 => {d}\n", .{section.reserved2});
+        try writer.print("\t\t> Reserved3 => {d}\n", .{section.reserved3});
+        try writer.print("\n", .{});
+    }
 }
 
 pub fn printBuildVersionCommand(lc: LoadCommand, writer: *Io.Writer) Io.Writer.Error!void {
     const cmd = lc.cast(BuildVersionCommand).?;
-    const version: Version = @bitCast(cmd.minos);
+    const minos: Version = @bitCast(cmd.minos);
+    const sdk: Version = @bitCast(cmd.sdk);
 
-    try writer.print("\t- Platform Type => 0x{x:0>8}\n", .{cmd.platform});
-    try writer.print("\t- Minimum OS Version => v{}.{}.{}\n", .{ version.major, version.minor, version.patch });
+    try writer.print("\t- Platform Type => {} (0x{x:0>8})\n", .{ cmd.platform, cmd.platform });
+    try writer.print("\t- Minimum OS Version => v{}.{}.{}\n", .{ minos.major, minos.minor, minos.patch });
+    try writer.print("\t- SDK Version => v{}.{}.{}\n", .{ sdk.major, sdk.minor, sdk.patch });
+    try writer.print("\t- Number of Tools => {}\n", .{cmd.ntools});
+    try writer.print("\t- Tools:\n", .{});
+
+    const tools = lc.getBuildVersionTools();
+    for (tools) |t| {
+        const v: Version = @bitCast(t.version);
+        try writer.print("\t\t> Tool => {} (v{}.{}.{})\n", .{ t.tool, v.major, v.minor, v.patch });
+    }
 }
