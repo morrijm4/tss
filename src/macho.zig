@@ -32,7 +32,7 @@ const MachoInitError = Io.Reader.Error || error{
 pub fn init(allocator: std.mem.Allocator, reader: *Io.Reader, options: InitOptions) MachoInitError!MachO {
     const endian = options.endian;
 
-    const m = try reader.peekInt(u32, .native);
+    const m = try reader.peekInt(u32, endian);
     if (m != std.macho.MH_MAGIC_64) return MachoInitError.InvalidMagic;
 
     const header = try reader.takeStruct(MachHeader64, endian);
