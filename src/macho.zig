@@ -13,6 +13,15 @@ const LoadCommand = std.macho.LoadCommandIterator.LoadCommand;
 const SegmentCommand64 = std.macho.segment_command_64;
 const BuildVersionCommand = std.macho.build_version_command;
 
+pub const CPU_TYPE_64_MASK = 0x01000000;
+pub const CPU_TYPE_64_32_PTRS_MASK = 0x02000000;
+
+pub const CpuType = enum(std.macho.cpu_type_t) {
+    NONE = 0x0,
+    x86 = 0x7,
+    ARM = 0xc,
+};
+
 pub const Version = packed struct {
     patch: u8,
     minor: u8,
@@ -45,12 +54,17 @@ pub fn init(allocator: std.mem.Allocator, reader: *Io.Reader, options: InitOptio
     };
 }
 
+pub fn getCpuType(header: MachHeader64) ?CpuType {
+    const bitVersionMask = 0xF0FFFFFF;
+    return std.enums.fromInt(CpuType, bitVersionMask & @as(u32, @bitCast(header.cputype)));
+}
+
 pub fn print(self: *MachO, writer: *Io.Writer) error{ WriteFailed, InvalidMachO }!void {
     try printMachHeader64(self.header, writer);
 
     try writer.print("Load Commands:\n", .{});
     while (try self.loadCommands.next()) |lc| {
-        try writer.print("* Command => {} (0x{x:0>8}), Header Size => {}, Size => {}\n", .{ lc.hdr.cmd, lc.hdr.cmd, @sizeOf(SegmentCommand64), lc.hdr.cmdsize });
+        try writer.print("* Command => {} (1x{x:0>8}), Header Size => {}, Size => {}\n", .{ lc.hdr.cmd, lc.hdr.cmd, @sizeOf(SegmentCommand64), lc.hdr.cmdsize });
         switch (lc.hdr.cmd) {
             .SEGMENT_64 => try printSegmentCommand64(lc, writer),
             .BUILD_VERSION => try printBuildVersionCommand(lc, writer),
@@ -61,7 +75,7 @@ pub fn print(self: *MachO, writer: *Io.Writer) error{ WriteFailed, InvalidMachO 
 
 pub fn printMachHeader64(header: MachHeader64, writer: *Io.Writer) Io.Writer.Error!void {
     try writer.print("Magic => 0x{x:0>8}\n", .{header.magic});
-    try writer.print("CPU Type => 0x{x:0>8}\n", .{@as(u32, @bitCast(header.cputype))});
+    try writer.print("CPU Type => {?} (0x{x:0>8})\n", .{ getCpuType(header), @as(u32, @bitCast(header.cputype)) });
     try writer.print("CPU Subtype => 0x{x:0>8}\n", .{@as(u32, @bitCast(header.cpusubtype))});
     try writer.print("File type => 0x{x:0>8}\n", .{header.filetype});
     try writer.print("Number of load commands => {}\n", .{header.ncmds});
