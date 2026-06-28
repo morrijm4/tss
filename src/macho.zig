@@ -54,6 +54,10 @@ pub fn init(allocator: std.mem.Allocator, reader: *Io.Reader, options: InitOptio
     };
 }
 
+pub fn deinit(self: *MachO, allocator: std.mem.Allocator) void {
+    allocator.free(self.loadCommands.r.buffer);
+}
+
 pub fn getCpuType(header: MachHeader64) ?CpuType {
     const bitVersionMask = 0xF0FFFFFF;
     return std.enums.fromInt(CpuType, bitVersionMask & @as(u32, @bitCast(header.cputype)));
@@ -130,4 +134,18 @@ pub fn printBuildVersionCommand(lc: LoadCommand, writer: *Io.Writer) Io.Writer.E
         const v: Version = @bitCast(t.version);
         try writer.print("\t\t> Tool => {} (v{}.{}.{})\n", .{ t.tool, v.major, v.minor, v.patch });
     }
+}
+
+test "Validate macho 64 magic value" {
+    const gpa = std.testing.allocator;
+    const buf: [4]u8 = @bitCast(@as(u32, std.macho.MH_MAGIC_64));
+    var reader = std.Io.Reader.fixed(&buf);
+    try std.testing.expectError(MachoInitError.EndOfStream, init(gpa, &reader, .{}));
+}
+
+test "Validate invalid macho 64 magic value" {
+    const gpa = std.testing.allocator;
+    const buf: [4]u8 = @bitCast(@as(u32, 0xBAD));
+    var reader = std.Io.Reader.fixed(&buf);
+    try std.testing.expectError(MachoInitError.InvalidMagic, init(gpa, &reader, .{}));
 }
