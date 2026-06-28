@@ -35,27 +35,12 @@ pub const CpuType = enum(std.macho.cpu_type_t) {
     @"RS/6000" = 0x11,
     PowerPC = 0x12,
     @"RISC-V" = 0x18,
-    _,
-};
-
-pub const CpuSubType = union(CpuType) {
-    ARM: Arm64SubType,
-    x86: X86SubType,
 };
 
 pub const Arm64SubType = enum(std.macho.cpu_subtype_t) {
     ARM64_ALL = 0,
     ARM64_V8 = 1,
     ARM64E = 2,
-    _,
-};
-
-pub const X86SubType = enum(std.macho.cpu_subtype_t) {
-    x86_ALL = 3,
-    x86_ARCH1 = 1,
-    /// Haswell feature subset
-    x86_64_H = 2,
-    _,
 };
 
 ///
@@ -156,9 +141,7 @@ pub fn getFileType(filetype: u32) ?FileType {
     return std.enums.fromInt(FileType, filetype);
 }
 
-pub const PrintError = Io.Writer.Error || error{ InvalidMachO, NoSpaceLeft };
-
-pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
+pub fn print(self: *MachO, w: *Io.Writer) error{ WriteFailed, InvalidMachO }!void {
     try printMachHeader64(self.header, w);
 
     try w.print("Load Commands:\n", .{});
@@ -177,23 +160,15 @@ pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
     }
 }
 
-pub fn printMachHeader64(hdr: MachHeader64, w: *Io.Writer) PrintError!void {
+pub fn printMachHeader64(hdr: MachHeader64, w: *Io.Writer) Io.Writer.Error!void {
     const rawcputype = @as(u32, @bitCast(hdr.cputype));
-    const rawcpusubtype = @as(u32, @bitCast(hdr.cpusubtype));
 
     const cputype = getCpuType(rawcputype);
     const filetype = getFileType(hdr.filetype);
 
-    var buf: [16]u8 = undefined;
-    const cpusubtype = if (cputype != null) switch (cputype.?) {
-        .ARM => try std.fmt.bufPrint(&buf, "{?}", .{std.enums.fromInt(Arm64SubType, hdr.cpusubtype)}),
-        .x86 => try std.fmt.bufPrint(&buf, "{?}", .{std.enums.fromInt(X86SubType, hdr.cpusubtype)}),
-        else => null,
-    } else null;
-
     try w.print("Magic => 0x{x:0>8}\n", .{hdr.magic});
     try w.print("CPU Type => {?} (0x{x:0>8})\n", .{ cputype, rawcputype });
-    try w.print("CPU Subtype => {?s} (0x{x:0>8})\n", .{ cpusubtype, rawcpusubtype });
+    try w.print("CPU Subtype => 0x{x:0>8}\n", .{});
     try w.print("File type => {?} (0x{x:0>8})\n", .{ filetype, hdr.filetype });
     try w.print("Number of load commands => {}\n", .{hdr.ncmds});
     try w.print("Load commands size => {}\n", .{hdr.sizeofcmds});
