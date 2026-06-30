@@ -12,6 +12,8 @@ const LoadCommandIterator = std.macho.LoadCommandIterator;
 const LoadCommand = std.macho.LoadCommandIterator.LoadCommand;
 const SegmentCommand64 = std.macho.segment_command_64;
 const BuildVersionCommand = std.macho.build_version_command;
+const SymbolTableCommand = std.macho.symtab_command;
+const DynamicSymbolTableCommand = std.macho.dysymtab_command;
 
 pub const CPU_TYPE_64_MASK = 0x01000000;
 pub const CPU_TYPE_64_32_PTRS_MASK = 0x02000000;
@@ -163,15 +165,16 @@ pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
 
     try w.print("Load Commands:\n", .{});
     while (try self.loadCommands.next()) |lc| {
-        try w.print("* Command => {} (0x{x:0>8}), Header Size => {}, Size => {}\n", .{
+        try w.print("* Command => {} (0x{x:0>8}), Size => {}\n", .{
             lc.hdr.cmd,
             lc.hdr.cmd,
-            @sizeOf(SegmentCommand64),
             lc.hdr.cmdsize,
         });
         switch (lc.hdr.cmd) {
             .SEGMENT_64 => try printSegmentCommand64(lc, w),
             .BUILD_VERSION => try printBuildVersionCommand(lc, w),
+            .SYMTAB => try printSymbolTable(lc, w),
+            .DYSYMTAB => try printDynamicSymbolTable(lc, w),
             else => {},
         }
     }
@@ -248,6 +251,36 @@ pub fn printBuildVersionCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!
         const v: Version = @bitCast(t.version);
         try w.print("\t\t> Tool => {} (v{}.{}.{})\n", .{ t.tool, v.major, v.minor, v.patch });
     }
+}
+
+pub fn printSymbolTable(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
+    const cmd = lc.cast(SymbolTableCommand).?;
+    try w.print("\t- Symbols offset => {d}\n", .{cmd.symoff});
+    try w.print("\t- Number of symbols => {d}\n", .{cmd.nsyms});
+    try w.print("\t- String table offset => {d}\n", .{cmd.stroff});
+    try w.print("\t- String table size => {d}\n", .{cmd.strsize});
+}
+
+pub fn printDynamicSymbolTable(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
+    const cmd = lc.cast(DynamicSymbolTableCommand).?;
+    try w.print("\t- Index of local symbols => {} \n", .{cmd.ilocalsym});
+    try w.print("\t- Number of local symbols => {} \n", .{cmd.nlocalsym});
+    try w.print("\t- Index of external symbols => {} \n", .{cmd.iextdefsym});
+    try w.print("\t- Number of external symbols => {} \n", .{cmd.nextdefsym});
+    try w.print("\t- Index of undefined symbols => {} \n", .{cmd.iundefsym});
+    try w.print("\t- Number of undefined symbols => {} \n", .{cmd.nundefsym});
+    try w.print("\t- Table of contents offset => {} \n", .{cmd.tocoff});
+    try w.print("\t- Number of table of contents entries => {} \n", .{cmd.ntoc});
+    try w.print("\t- Module table offset => {} \n", .{cmd.modtaboff});
+    try w.print("\t- Number of module table entries => {} \n", .{cmd.nmodtab});
+    try w.print("\t- Referenced symbol table offset => {} \n", .{cmd.extrefsymoff});
+    try w.print("\t- Number of referenced symbol table entries => {} \n", .{cmd.nextrefsyms});
+    try w.print("\t- Indirect symbol table offset => {} \n", .{cmd.indirectsymoff});
+    try w.print("\t- Number of indirect symbol table entries => {} \n", .{cmd.nindirectsyms});
+    try w.print("\t- External relocation entries offset => {} \n", .{cmd.extreloff});
+    try w.print("\t- Number of external relocation entries => {} \n", .{cmd.nextrel});
+    try w.print("\t- Local relocation entries offset => {} \n", .{cmd.locreloff});
+    try w.print("\t- Number of local relocation entries {} => \n", .{cmd.nlocrel});
 }
 
 test "Validate macho 64 magic value" {
