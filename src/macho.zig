@@ -14,6 +14,7 @@ const SegmentCommand64 = std.macho.segment_command_64;
 const BuildVersionCommand = std.macho.build_version_command;
 const SymbolTableCommand = std.macho.symtab_command;
 const DynamicSymbolTableCommand = std.macho.dysymtab_command;
+const UUIDCommand = std.macho.uuid_command;
 
 pub const CPU_TYPE_64_MASK = 0x01000000;
 pub const CPU_TYPE_64_32_PTRS_MASK = 0x02000000;
@@ -175,6 +176,7 @@ pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
             .BUILD_VERSION => try printBuildVersionCommand(lc, w),
             .SYMTAB => try printSymbolTable(lc, w),
             .DYSYMTAB => try printDynamicSymbolTable(lc, w),
+            .UUID => try printUUIDCommand(lc, w),
             else => {},
         }
     }
@@ -263,24 +265,43 @@ pub fn printSymbolTable(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
 
 pub fn printDynamicSymbolTable(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
     const cmd = lc.cast(DynamicSymbolTableCommand).?;
-    try w.print("\t- Index of local symbols => {} \n", .{cmd.ilocalsym});
-    try w.print("\t- Number of local symbols => {} \n", .{cmd.nlocalsym});
-    try w.print("\t- Index of external symbols => {} \n", .{cmd.iextdefsym});
-    try w.print("\t- Number of external symbols => {} \n", .{cmd.nextdefsym});
-    try w.print("\t- Index of undefined symbols => {} \n", .{cmd.iundefsym});
-    try w.print("\t- Number of undefined symbols => {} \n", .{cmd.nundefsym});
-    try w.print("\t- Table of contents offset => {} \n", .{cmd.tocoff});
-    try w.print("\t- Number of table of contents entries => {} \n", .{cmd.ntoc});
-    try w.print("\t- Module table offset => {} \n", .{cmd.modtaboff});
-    try w.print("\t- Number of module table entries => {} \n", .{cmd.nmodtab});
-    try w.print("\t- Referenced symbol table offset => {} \n", .{cmd.extrefsymoff});
-    try w.print("\t- Number of referenced symbol table entries => {} \n", .{cmd.nextrefsyms});
-    try w.print("\t- Indirect symbol table offset => {} \n", .{cmd.indirectsymoff});
-    try w.print("\t- Number of indirect symbol table entries => {} \n", .{cmd.nindirectsyms});
-    try w.print("\t- External relocation entries offset => {} \n", .{cmd.extreloff});
-    try w.print("\t- Number of external relocation entries => {} \n", .{cmd.nextrel});
-    try w.print("\t- Local relocation entries offset => {} \n", .{cmd.locreloff});
-    try w.print("\t- Number of local relocation entries {} => \n", .{cmd.nlocrel});
+    try w.print("\t- Index of local symbols => {}\n", .{cmd.ilocalsym});
+    try w.print("\t- Number of local symbols => {}\n", .{cmd.nlocalsym});
+    try w.print("\t- Index of external symbols => {}\n", .{cmd.iextdefsym});
+    try w.print("\t- Number of external symbols => {}\n", .{cmd.nextdefsym});
+    try w.print("\t- Index of undefined symbols => {}\n", .{cmd.iundefsym});
+    try w.print("\t- Number of undefined symbols => {}\n", .{cmd.nundefsym});
+    try w.print("\t- Table of contents offset => {}\n", .{cmd.tocoff});
+    try w.print("\t- Number of table of contents entries => {}\n", .{cmd.ntoc});
+    try w.print("\t- Module table offset => {}\n", .{cmd.modtaboff});
+    try w.print("\t- Number of module table entries => {}\n", .{cmd.nmodtab});
+    try w.print("\t- Referenced symbol table offset => {}\n", .{cmd.extrefsymoff});
+    try w.print("\t- Number of referenced symbol table entries => {}\n", .{cmd.nextrefsyms});
+    try w.print("\t- Indirect symbol table offset => {}\n", .{cmd.indirectsymoff});
+    try w.print("\t- Number of indirect symbol table entries => {}\n", .{cmd.nindirectsyms});
+    try w.print("\t- External relocation entries offset => {}\n", .{cmd.extreloff});
+    try w.print("\t- Number of external relocation entries => {}\n", .{cmd.nextrel});
+    try w.print("\t- Local relocation entries offset => {}\n", .{cmd.locreloff});
+    try w.print("\t- Number of local relocation entries => {}\n", .{cmd.nlocrel});
+}
+
+pub fn printUUIDCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
+    const cmd = lc.cast(UUIDCommand).?;
+    const uuid = cmd.uuid;
+
+    const timeLow = std.fmt.bytesToHex(uuid[0..4], .lower);
+    const timeMid = std.fmt.bytesToHex(uuid[4..6], .lower);
+    const timeHighAndVersion = std.fmt.bytesToHex(uuid[6..8], .lower);
+    const clockSequence = std.fmt.bytesToHex(uuid[8..10], .lower);
+    const node = std.fmt.bytesToHex(uuid[10..16], .lower);
+
+    try w.print("\t- UUID => {s}-{s}-{s}-{s}-{s}\n", .{
+        timeLow,
+        timeMid,
+        timeHighAndVersion,
+        clockSequence,
+        node,
+    });
 }
 
 test "Validate macho 64 magic value" {
