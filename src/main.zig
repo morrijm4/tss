@@ -7,9 +7,10 @@ const tss = @import("tss");
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena.allocator();
+    const args = try tss.args.init(arena, io, init.minimal.args);
 
     var buf: [1024]u8 = undefined;
-    var reader = Io.File.stdin().reader(io, &buf);
+    var reader = args.file.reader(io, &buf);
     const r = &reader.interface;
 
     var macho = try tss.macho.init(arena, r, .{});
