@@ -116,6 +116,14 @@ const FileType = enum(u32) {
     _,
 };
 
+pub const Symbol64 = packed struct {
+    nameoff: u32,
+    type: u8,
+    secnum: u8,
+    datainfo: u16,
+    symaddr: u64,
+};
+
 pub const Version = packed struct {
     patch: u8,
     minor: u8,
@@ -177,11 +185,11 @@ pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
                 const cmd = lc.cast(SegmentCommand64).?;
                 try printSegmentCommand64(cmd, w);
                 for (lc.getSections()) |section| {
-                    try printSection64(section, w);
+                    try self.printSection64(section, w);
                 }
             },
             .BUILD_VERSION => try printBuildVersionCommand(lc, w),
-            .SYMTAB => try printSymbolTable(lc, w),
+            .SYMTAB => try self.printSymbolTable(lc, w),
             .DYSYMTAB => try printDynamicSymbolTable(lc, w),
             .UUID => try printUUIDCommand(lc, w),
             else => {},
@@ -227,7 +235,7 @@ pub fn printSegmentCommand64(cmd: SegmentCommand64, w: *Io.Writer) Io.Writer.Err
     try w.print("\t- Sections:\n", .{});
 }
 
-pub fn printSection64(section: Section64, w: *Io.Writer) Io.Writer.Error!void {
+pub fn printSection64(self: *MachO, section: Section64, w: *Io.Writer) Io.Writer.Error!void {
     const name = section.sectName();
     try w.print("\t\t> Section Name => {s}\n", .{name});
     try w.print("\t\t> Segment Name => {s}\n", .{section.segName()});
@@ -243,12 +251,11 @@ pub fn printSection64(section: Section64, w: *Io.Writer) Io.Writer.Error!void {
     try w.print("\t\t> Reserved3 => {d}\n", .{section.reserved3});
     try w.print("\n", .{});
 
-    if (std.mem.eql(u8, section.sectName(), "__text")) {
-        const instructions = std.mem.bytesAsSlice(u32, self.contents[sec.offset..][0..sec.size]);
+    if (section.isCode()) {
+        const instructions = std.mem.bytesAsSlice(u32, self.contents[section.offset..][0..section.size]);
         for (instructions) |ins| {
-            try w.print("0x{x:0>8}\n", .{ins});
+            try w.print("\t\t0x{x:0>8}\n", .{ins});
         }
-
         try w.print("\n", .{});
     }
 }
@@ -272,12 +279,26 @@ pub fn printBuildVersionCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!
     }
 }
 
-pub fn printSymbolTable(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
+pub fn printSymbolTable(self: *MachO, lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
     const cmd = lc.cast(SymbolTableCommand).?;
     try w.print("\t- Symbols offset => {d}\n", .{cmd.symoff});
     try w.print("\t- Number of symbols => {d}\n", .{cmd.nsyms});
     try w.print("\t- String table offset => {d}\n", .{cmd.stroff});
     try w.print("\t- String table size => {d}\n", .{cmd.strsize});
+    try w.print("\t- Symbols:\n", .{});
+
+    const symbols: []align(1) const Symbol64 = std.mem.bytesAsSlice(Symbol64, self.contents[cmd.symoff..])[0..cmd.nsyms];
+    for (symbols) |sym| {
+        const offset = cmd.stroff + sym.nameoff;
+        const name = std.mem.sliceTo(self.contents[offset..], 0);
+        try w.print("\t\t> Name => {s}\n", .{name});
+        try w.print("\t\t> Name Offset => {d}\n", .{sym.nameoff});
+        try w.print("\t\t> Type => 0b{b:0>8}\n", .{sym.type});
+        try w.print("\t\t> Section Number => {d}\n", .{sym.secnum});
+        try w.print("\t\t> Data info => {d}\n", .{sym.datainfo});
+        try w.print("\t\t> Symbol address => 0x{x:0>16}\n", .{sym.symaddr});
+        try w.print("\n", .{});
+    }
 }
 
 pub fn printDynamicSymbolTable(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
