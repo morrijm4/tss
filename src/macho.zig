@@ -287,11 +287,12 @@ pub fn printSymbolTable(self: *MachO, lc: LoadCommand, w: *Io.Writer) Io.Writer.
     try w.print("\t- String table size => {d}\n", .{cmd.strsize});
     try w.print("\t- Symbols:\n", .{});
 
-    const symbols: []align(1) const Symbol64 = std.mem.bytesAsSlice(Symbol64, self.contents[cmd.symoff..])[0..cmd.nsyms];
-    for (symbols) |sym| {
+    const symbolSlice = self.contents[cmd.symoff..(@sizeOf(Symbol64) * cmd.nsyms + cmd.symoff)];
+    const symbols: []align(1) const Symbol64 = std.mem.bytesAsSlice(Symbol64, symbolSlice);
+    for (symbols, 0..) |sym, i| {
         const offset = cmd.stroff + sym.nameoff;
         const name = std.mem.sliceTo(self.contents[offset..], 0);
-        try w.print("\t\t> Name => {s}\n", .{name});
+        try w.print("\t\t> Name => {d}. {s}\n", .{ i, name });
         try w.print("\t\t> Name Offset => {d}\n", .{sym.nameoff});
         try w.print("\t\t> Type => 0b{b:0>8}\n", .{sym.type});
         try w.print("\t\t> Section Number => {d}\n", .{sym.secnum});
