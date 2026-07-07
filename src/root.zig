@@ -1,5 +1,5 @@
 pub const macho = @import("./macho.zig");
-pub const args = @import("./args.zig");
+pub const opts = @import("./opts.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

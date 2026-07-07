@@ -4,19 +4,27 @@ const log = std.log.scoped(.main);
 
 const tss = @import("tss");
 
+const BUFFER_SIZE = 4096;
+
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena.allocator();
-    const args = try tss.args.init(arena, io, init.minimal.args);
 
-    var buf: [1024]u8 = undefined;
-    var reader = args.file.reader(io, &buf);
+    const opts = try tss.opts.init(arena, io, init.minimal.args);
+    defer opts.deinit(io);
+
+    var buf: [BUFFER_SIZE]u8 = undefined;
+    var reader = opts.bin.reader(io, &buf);
     const r = &reader.interface;
 
-    var macho = try tss.macho.init(arena, r, .{});
+    var macho = try tss.macho.init(arena, r);
+    defer macho.deinit(arena);
 
-    var stdoutWriter = Io.File.stdout().writer(io, &buf);
-    var w = &stdoutWriter.interface;
+    const stdout = Io.File.stdout();
+    defer stdout.close(io);
+
+    var stdoutWriter = stdout.writer(io, &buf);
+    const w = &stdoutWriter.interface;
 
     try macho.print(w);
     try w.flush();

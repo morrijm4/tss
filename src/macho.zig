@@ -1,11 +1,12 @@
 const std = @import("std");
+const Options = @import("./opts.zig").Options;
+
 const Io = std.Io;
 const log = std.log.scoped(.macho);
 
 const MachO = @This();
 
-header: MachHeader64,
-loadCommands: LoadCommandIterator,
+contents: []const u8,
 
 const MachHeader64 = std.macho.mach_header_64;
 const LoadCommandIterator = std.macho.LoadCommandIterator;
@@ -15,6 +16,7 @@ const BuildVersionCommand = std.macho.build_version_command;
 const SymbolTableCommand = std.macho.symtab_command;
 const DynamicSymbolTableCommand = std.macho.dysymtab_command;
 const UUIDCommand = std.macho.uuid_command;
+const Section64 = std.macho.section_64;
 
 pub const CPU_TYPE_64_MASK = 0x01000000;
 pub const CPU_TYPE_64_32_PTRS_MASK = 0x02000000;
@@ -124,30 +126,28 @@ pub const InitOptions = struct {
     endian: std.builtin.Endian = .native,
 };
 
-const MachoInitError = Io.Reader.Error || error{
-    OutOfMemory,
-    InvalidMachO,
-    InvalidMagic,
-};
+const MachoInitError = Io.Reader.LimitedAllocError;
 
-pub fn init(alloc: std.mem.Allocator, r: *Io.Reader, opts: InitOptions) MachoInitError!MachO {
-    const endian = opts.endian;
-
-    const m = try r.peekInt(u32, endian);
-    if (m != std.macho.MH_MAGIC_64) return MachoInitError.InvalidMagic;
-
-    const header = try r.takeStruct(MachHeader64, endian);
-    const loadCommandsBuffer = try r.readAlloc(alloc, header.sizeofcmds);
-    errdefer alloc.free(loadCommandsBuffer);
+pub fn init(allocator: std.mem.Allocator, reader: *Io.Reader) MachoInitError!MachO {
+    const contents = try reader.allocRemaining(allocator, .unlimited);
+    errdefer allocator.free(contents);
 
     return .{
-        .header = header,
-        .loadCommands = try LoadCommandIterator.init(&header, loadCommandsBuffer),
+        .contents = contents,
     };
 }
 
 pub fn deinit(self: *MachO, allocator: std.mem.Allocator) void {
-    allocator.free(self.loadCommands.r.buffer);
+    allocator.free(self.contents);
+}
+
+pub fn getHeader(self: *MachO) MachHeader64 {
+    return std.mem.bytesToValue(MachHeader64, self.contents[0..@sizeOf(MachHeader64)]);
+}
+
+pub fn getLoadCommandIterator(self: *MachO) error{InvalidMachO}!LoadCommandIterator {
+    const header = self.getHeader();
+    return try .init(&header, self.contents[@sizeOf(MachHeader64)..][0..header.sizeofcmds]);
 }
 
 pub fn getCpuType(cputype: u32) ?CpuType {
@@ -159,20 +159,32 @@ pub fn getFileType(filetype: u32) ?FileType {
     return std.enums.fromInt(FileType, filetype);
 }
 
-pub const PrintError = Io.Writer.Error || error{ InvalidMachO, NoSpaceLeft };
+pub const PrintError = Io.Writer.Error || Io.File.Reader.SeekError || error{ InvalidMachO, NoSpaceLeft };
 
 pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
-    try printMachHeader64(self.header, w);
+    try printMachHeader64(self, w);
+    var textSection: ?Section64 = null;
 
+    var it = try self.getLoadCommandIterator();
     try w.print("Load Commands:\n", .{});
-    while (try self.loadCommands.next()) |lc| {
+    while (try it.next()) |lc| {
         try w.print("* Command => {} (0x{x:0>8}), Size => {}\n", .{
             lc.hdr.cmd,
             lc.hdr.cmd,
             lc.hdr.cmdsize,
         });
         switch (lc.hdr.cmd) {
-            .SEGMENT_64 => try printSegmentCommand64(lc, w),
+            .SEGMENT_64 => {
+                const cmd = lc.cast(SegmentCommand64).?;
+                try printSegmentCommand64(cmd, w);
+                for (lc.getSections()) |section| {
+                    try printSection64(section, w);
+
+                    if (std.mem.eql(u8, section.sectName(), "__text")) {
+                        textSection = section;
+                    }
+                }
+            },
             .BUILD_VERSION => try printBuildVersionCommand(lc, w),
             .SYMTAB => try printSymbolTable(lc, w),
             .DYSYMTAB => try printDynamicSymbolTable(lc, w),
@@ -180,9 +192,19 @@ pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
             else => {},
         }
     }
+
+    if (textSection != null) {
+        const ts = textSection.?;
+        var r = Io.Reader.fixed(self.contents[ts.offset..]);
+
+        for (0..(ts.size / 4)) |_| {
+            try w.print("0x{x:0>8}\n", .{try r.takeInt(u32, .native)});
+        }
+    }
 }
 
-pub fn printMachHeader64(hdr: MachHeader64, w: *Io.Writer) PrintError!void {
+pub fn printMachHeader64(self: *MachO, w: *Io.Writer) PrintError!void {
+    const hdr = self.getHeader();
     const rawcputype = @as(u32, @bitCast(hdr.cputype));
     const rawcpusubtype = @as(u32, @bitCast(hdr.cpusubtype));
 
@@ -206,8 +228,7 @@ pub fn printMachHeader64(hdr: MachHeader64, w: *Io.Writer) PrintError!void {
     try w.print("\n", .{});
 }
 
-pub fn printSegmentCommand64(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
-    const cmd = lc.cast(SegmentCommand64).?;
+pub fn printSegmentCommand64(cmd: SegmentCommand64, w: *Io.Writer) Io.Writer.Error!void {
     try w.print("\t- Name => {s}\n", .{cmd.segName()});
     try w.print("\t- VM Address => 0x{x:0>16}\n", .{cmd.vmaddr});
     try w.print("\t- VM Size => {d}\n", .{cmd.vmsize});
@@ -218,22 +239,23 @@ pub fn printSegmentCommand64(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!voi
     try w.print("\t- Number of Sections => {d}\n", .{cmd.nsects});
     try w.print("\t- Flags => 0b{b:0>32}\n", .{cmd.flags});
     try w.print("\t- Sections:\n", .{});
+}
 
-    const sections = lc.getSections();
-    for (sections) |section| {
-        try w.print("\t\t> Section Name => {s}\n", .{section.sectName()});
-        try w.print("\t\t> Segment Name => {s}\n", .{section.segName()});
-        try w.print("\t\t> Section Address => 0x{x:0>16}\n", .{section.addr});
-        try w.print("\t\t> Section File Offset => {d}\n", .{section.offset});
-        try w.print("\t\t> Alignment => {d}\n", .{section.@"align"});
-        try w.print("\t\t> Relocations File Offset => {d}\n", .{section.reloff});
-        try w.print("\t\t> Number of Relocations => {d}\n", .{section.nreloc});
-        try w.print("\t\t> Flags/Type => 0b{b:0>32}\n", .{section.flags});
-        try w.print("\t\t> Reserved1 => {d}\n", .{section.reserved1});
-        try w.print("\t\t> Reserved2 => {d}\n", .{section.reserved2});
-        try w.print("\t\t> Reserved3 => {d}\n", .{section.reserved3});
-        try w.print("\n", .{});
-    }
+pub fn printSection64(section: Section64, w: *Io.Writer) Io.Writer.Error!void {
+    const name = section.sectName();
+    try w.print("\t\t> Section Name => {s}\n", .{name});
+    try w.print("\t\t> Segment Name => {s}\n", .{section.segName()});
+    try w.print("\t\t> Section Address => 0x{x:0>16}\n", .{section.addr});
+    try w.print("\t\t> Section Size => {d}\n", .{section.size});
+    try w.print("\t\t> Section File Offset => {d}\n", .{section.offset});
+    try w.print("\t\t> Alignment => {d}\n", .{section.@"align"});
+    try w.print("\t\t> Relocations File Offset => {d}\n", .{section.reloff});
+    try w.print("\t\t> Number of Relocations => {d}\n", .{section.nreloc});
+    try w.print("\t\t> Flags/Type => 0b{b:0>32}\n", .{section.flags});
+    try w.print("\t\t> Reserved1 => {d}\n", .{section.reserved1});
+    try w.print("\t\t> Reserved2 => {d}\n", .{section.reserved2});
+    try w.print("\t\t> Reserved3 => {d}\n", .{section.reserved3});
+    try w.print("\n", .{});
 }
 
 pub fn printBuildVersionCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
@@ -302,18 +324,4 @@ pub fn printUUIDCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
         clockSequence,
         node,
     });
-}
-
-test "Validate macho 64 magic value" {
-    const gpa = std.testing.allocator;
-    const buf: [4]u8 = @bitCast(@as(u32, std.macho.MH_MAGIC_64));
-    var reader = std.Io.Reader.fixed(&buf);
-    try std.testing.expectError(MachoInitError.EndOfStream, init(gpa, &reader, .{}));
-}
-
-test "Validate invalid macho 64 magic value" {
-    const gpa = std.testing.allocator;
-    const buf: [4]u8 = @bitCast(@as(u32, 0xBAD));
-    var reader = std.Io.Reader.fixed(&buf);
-    try std.testing.expectError(MachoInitError.InvalidMagic, init(gpa, &reader, .{}));
 }
