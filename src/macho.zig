@@ -163,7 +163,6 @@ pub const PrintError = Io.Writer.Error || Io.File.Reader.SeekError || error{ Inv
 
 pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
     try printMachHeader64(self, w);
-    var textSection: ?Section64 = null;
 
     var it = try self.getLoadCommandIterator();
     try w.print("Load Commands:\n", .{});
@@ -179,10 +178,6 @@ pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
                 try printSegmentCommand64(cmd, w);
                 for (lc.getSections()) |section| {
                     try printSection64(section, w);
-
-                    if (std.mem.eql(u8, section.sectName(), "__text")) {
-                        textSection = section;
-                    }
                 }
             },
             .BUILD_VERSION => try printBuildVersionCommand(lc, w),
@@ -190,15 +185,6 @@ pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
             .DYSYMTAB => try printDynamicSymbolTable(lc, w),
             .UUID => try printUUIDCommand(lc, w),
             else => {},
-        }
-    }
-
-    if (textSection != null) {
-        const ts = textSection.?;
-        var r = Io.Reader.fixed(self.contents[ts.offset..]);
-
-        for (0..(ts.size / 4)) |_| {
-            try w.print("0x{x:0>8}\n", .{try r.takeInt(u32, .native)});
         }
     }
 }
@@ -256,6 +242,15 @@ pub fn printSection64(section: Section64, w: *Io.Writer) Io.Writer.Error!void {
     try w.print("\t\t> Reserved2 => {d}\n", .{section.reserved2});
     try w.print("\t\t> Reserved3 => {d}\n", .{section.reserved3});
     try w.print("\n", .{});
+
+    if (std.mem.eql(u8, section.sectName(), "__text")) {
+        const instructions = std.mem.bytesAsSlice(u32, self.contents[sec.offset..][0..sec.size]);
+        for (instructions) |ins| {
+            try w.print("0x{x:0>8}\n", .{ins});
+        }
+
+        try w.print("\n", .{});
+    }
 }
 
 pub fn printBuildVersionCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
