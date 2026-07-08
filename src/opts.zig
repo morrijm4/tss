@@ -13,16 +13,14 @@ endian: std.builtin.Endian = .native,
 
 pub const OptionsInitError = process.Args.ToSliceError || File.OpenError;
 
-pub fn init(arena: mem.Allocator, io: std.Io, args: process.Args) OptionsInitError!Options {
-    const argv = try args.toSlice(arena);
-
+pub fn init(io: std.Io, args: []const [:0]const u8) OptionsInitError!Options {
     var a: Options = .{
         .bin = undefined,
         .endian = .native,
     };
 
-    if (argv.len > 1) {
-        const path = argv[1];
+    if (args.len > 1) {
+        const path = args[1];
         a.bin = try Io.Dir.cwd().openFile(io, path, .{});
     } else {
         a.bin = File.stdin();
@@ -33,4 +31,11 @@ pub fn init(arena: mem.Allocator, io: std.Io, args: process.Args) OptionsInitErr
 
 pub fn deinit(self: *const Options, io: std.Io) void {
     self.bin.close(io);
+}
+
+test "can open and close files" {
+    const io = std.testing.io;
+    const args = [_][:0]const u8{ "./tss", "./test/simple" };
+    const opts = try init(io, &args);
+    defer opts.deinit(io);
 }

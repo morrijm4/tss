@@ -184,6 +184,7 @@ pub const PrintError = Io.Writer.Error || Io.File.Reader.SeekError || error{ Inv
 pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
     try printMachHeader64(self, w);
 
+    // TODO: Make the LoadCommandIterator const
     var it = try self.getLoadCommandIterator();
     try w.print("Load Commands:\n", .{});
     while (try it.next()) |lc| {
@@ -415,4 +416,25 @@ pub fn printUUIDCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
         clockSequence,
         node,
     });
+}
+
+test "can print" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    const opts = @import("./opts.zig");
+
+    const files = [_][:0]const u8{ "./test/simple", "./test/simple.o" };
+    var buf: [4096]u8 = undefined;
+
+    for (files) |file| {
+        const opt = try opts.init(io, &[_][:0]const u8{ "./tss", file });
+
+        var reader = opt.bin.reader(io, &buf);
+        var macho = try init(gpa, &reader.interface);
+        defer macho.deinit(gpa);
+
+        var discard = Io.Writer.Discarding.init(&buf);
+        try macho.print(&discard.writer);
+        try discard.writer.flush();
+    }
 }

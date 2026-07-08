@@ -10,7 +10,8 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena.allocator();
 
-    const opts = try tss.opts.init(arena, io, init.minimal.args);
+    const args = try init.minimal.args.toSlice(arena);
+    const opts = try tss.opts.init(io, args);
     defer opts.deinit(io);
 
     var buf: [BUFFER_SIZE]u8 = undefined;
