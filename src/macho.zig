@@ -13,9 +13,13 @@ const LoadCommandIterator = std.macho.LoadCommandIterator;
 const LoadCommand = std.macho.LoadCommandIterator.LoadCommand;
 const SegmentCommand64 = std.macho.segment_command_64;
 const BuildVersionCommand = std.macho.build_version_command;
+const SourceVersionCommand = std.macho.source_version_command;
 const SymbolTableCommand = std.macho.symtab_command;
 const DynamicSymbolTableCommand = std.macho.dysymtab_command;
+const MainCommand = std.macho.entry_point_command;
 const UUIDCommand = std.macho.uuid_command;
+const LinkeditDataCommand = std.macho.linkedit_data_command;
+const DylibCommand = std.macho.dylib_command;
 const Section64 = std.macho.section_64;
 
 pub const CPU_TYPE_64_MASK = 0x01000000;
@@ -130,6 +134,14 @@ pub const Version = packed struct {
     major: u16,
 };
 
+pub const SourceVersion = packed struct(u64) {
+    e: u10,
+    d: u10,
+    c: u10,
+    b: u10,
+    a: u24,
+};
+
 pub const InitOptions = struct {
     endian: std.builtin.Endian = .native,
 };
@@ -181,17 +193,27 @@ pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
             lc.hdr.cmdsize,
         });
         switch (lc.hdr.cmd) {
-            .SEGMENT_64 => {
-                const cmd = lc.cast(SegmentCommand64).?;
-                try printSegmentCommand64(cmd, w);
-                for (lc.getSections()) |section| {
-                    try self.printSection64(section, w);
-                }
-            },
-            .BUILD_VERSION => try printBuildVersionCommand(lc, w),
+            .SEGMENT_64 => try self.printSegmentCommand64(lc, w),
             .SYMTAB => try self.printSymbolTable(lc, w),
             .DYSYMTAB => try printDynamicSymbolTable(lc, w),
+            .MAIN => try self.printMainCommand(lc, w),
+            .BUILD_VERSION => try printBuildVersionCommand(lc, w),
+            .SOURCE_VERSION => try printSourceVersionCommand(lc, w),
             .UUID => try printUUIDCommand(lc, w),
+            .CODE_SIGNATURE,
+            .SEGMENT_SPLIT_INFO,
+            .FUNCTION_STARTS,
+            .DATA_IN_CODE,
+            .DYLIB_CODE_SIGN_DRS,
+            .DYLD_EXPORTS_TRIE,
+            .DYLD_CHAINED_FIXUPS,
+            .LINKER_OPTIMIZATION_HINT,
+            => try printLinkeditDataCommand(lc, w),
+            .ID_DYLIB,
+            .LOAD_WEAK_DYLIB,
+            .LOAD_DYLIB,
+            .REEXPORT_DYLIB,
+            => try printDylibCommand(lc, w),
             else => {},
         }
     }
@@ -222,7 +244,8 @@ pub fn printMachHeader64(self: *MachO, w: *Io.Writer) PrintError!void {
     try w.print("\n", .{});
 }
 
-pub fn printSegmentCommand64(cmd: SegmentCommand64, w: *Io.Writer) Io.Writer.Error!void {
+pub fn printSegmentCommand64(self: *MachO, lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
+    const cmd = lc.cast(SegmentCommand64).?;
     try w.print("\t- Name => {s}\n", .{cmd.segName()});
     try w.print("\t- VM Address => 0x{x:0>16}\n", .{cmd.vmaddr});
     try w.print("\t- VM Size => {d}\n", .{cmd.vmsize});
@@ -233,6 +256,10 @@ pub fn printSegmentCommand64(cmd: SegmentCommand64, w: *Io.Writer) Io.Writer.Err
     try w.print("\t- Number of Sections => {d}\n", .{cmd.nsects});
     try w.print("\t- Flags => 0b{b:0>32}\n", .{cmd.flags});
     try w.print("\t- Sections:\n", .{});
+
+    for (lc.getSections()) |section| {
+        try self.printSection64(section, w);
+    }
 }
 
 pub fn printSection64(self: *MachO, section: Section64, w: *Io.Writer) Io.Writer.Error!void {
@@ -251,13 +278,60 @@ pub fn printSection64(self: *MachO, section: Section64, w: *Io.Writer) Io.Writer
     try w.print("\t\t> Reserved3 => {d}\n", .{section.reserved3});
     try w.print("\n", .{});
 
-    if (section.isCode()) {
-        const instructions = std.mem.bytesAsSlice(u32, self.contents[section.offset..][0..section.size]);
-        for (instructions) |ins| {
-            try w.print("\t\t0x{x:0>8}\n", .{ins});
-        }
-        try w.print("\n", .{});
-    }
+    _ = self;
+    // if (section.isCode()) {
+    //     const instructions = std.mem.bytesAsSlice(u32, self.contents[section.offset..][0..section.size]);
+    //     for (instructions) |ins| {
+    //         try w.print("\t\t0x{x:0>8}\n", .{ins});
+    //     }
+    //     try w.print("\n", .{});
+    // }
+}
+
+pub fn printLinkeditDataCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
+    const cmd = lc.cast(LinkeditDataCommand).?;
+    try w.print("\t- Data offset => {}\n", .{cmd.dataoff});
+    try w.print("\t- Data size => {}\n", .{cmd.datasize});
+}
+
+pub fn printDylibCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
+    const cmd = lc.cast(DylibCommand).?;
+    const dylib = cmd.dylib;
+
+    try w.print("\t- Name => {s}\n", .{lc.getDylibPathName()});
+    try w.print("\t- Name offset => {d}\n", .{dylib.name});
+    try w.print("\t- Timestamp => {d}\n", .{dylib.timestamp});
+
+    const currv: Version = @bitCast(dylib.current_version);
+    try w.print("\t- Current version => {d}.{d}.{d}\n", .{
+        currv.major,
+        currv.minor,
+        currv.patch,
+    });
+
+    const compatv: Version = @bitCast(dylib.compatibility_version);
+    try w.print("\t- Compatibility version => {d}.{d}.{d}\n", .{
+        compatv.major,
+        compatv.minor,
+        compatv.patch,
+    });
+}
+
+pub fn printMainCommand(self: *MachO, lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
+    const cmd = lc.cast(MainCommand).?;
+
+    const start = cmd.entryoff;
+    const end = start + 4;
+    const instruction = std.mem.bytesToValue(u32, self.contents[start..end]);
+
+    try w.print("\t- Entry offset => {} (0x{x:0>8})\n", .{ cmd.entryoff, instruction });
+    try w.print("\t- Stack size => {}\n", .{cmd.stacksize});
+}
+
+pub fn printSourceVersionCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
+    const cmd = lc.cast(SourceVersionCommand).?;
+    const v: SourceVersion = @bitCast(cmd.version);
+    try w.print("\t- Version {}.{}.{}.{}.{}\n", .{ v.a, v.b, v.c, v.d, v.e });
 }
 
 pub fn printBuildVersionCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
