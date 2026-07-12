@@ -8,22 +8,39 @@ const MachO = @This();
 
 contents: []const u8,
 
-const MachHeader64 = std.macho.mach_header_64;
-const LoadCommandIterator = std.macho.LoadCommandIterator;
-const LoadCommand = std.macho.LoadCommandIterator.LoadCommand;
-const SegmentCommand64 = std.macho.segment_command_64;
-const BuildVersionCommand = std.macho.build_version_command;
-const SourceVersionCommand = std.macho.source_version_command;
-const SymbolTableCommand = std.macho.symtab_command;
-const DynamicSymbolTableCommand = std.macho.dysymtab_command;
-const MainCommand = std.macho.entry_point_command;
-const UUIDCommand = std.macho.uuid_command;
-const LinkeditDataCommand = std.macho.linkedit_data_command;
-const DylibCommand = std.macho.dylib_command;
-const Section64 = std.macho.section_64;
+pub const MachHeader64 = std.macho.mach_header_64;
+pub const LoadCommandIterator = std.macho.LoadCommandIterator;
+pub const LoadCommand = std.macho.LoadCommandIterator.LoadCommand;
+pub const SegmentCommand64 = std.macho.segment_command_64;
+pub const BuildVersionCommand = std.macho.build_version_command;
+pub const SourceVersionCommand = std.macho.source_version_command;
+pub const SymbolTableCommand = std.macho.symtab_command;
+pub const DynamicSymbolTableCommand = std.macho.dysymtab_command;
+pub const MainCommand = std.macho.entry_point_command;
+pub const UUIDCommand = std.macho.uuid_command;
+pub const LinkeditDataCommand = std.macho.linkedit_data_command;
+pub const DylibCommand = std.macho.dylib_command;
+pub const Section64 = std.macho.section_64;
 
 pub const CPU_TYPE_64_MASK = 0x01000000;
 pub const CPU_TYPE_64_32_PTRS_MASK = 0x02000000;
+
+pub const Magic = enum(u32) {
+    magic32 = std.macho.MH_MAGIC,
+    magic64 = std.macho.MH_MAGIC_64,
+    cigam32 = std.macho.MH_CIGAM,
+    cigam64 = std.macho.MH_CIGAM_64,
+};
+
+pub const ArchBit = enum {
+    bit32,
+    bit64,
+};
+
+pub const PointerType = enum {
+    ptr32,
+    ptr64,
+};
 
 pub const CpuType = enum(std.macho.cpu_type_t) {
     NONE = 0x0,
@@ -44,12 +61,27 @@ pub const CpuType = enum(std.macho.cpu_type_t) {
     @"RS/6000" = 0x11,
     PowerPC = 0x12,
     @"RISC-V" = 0x18,
-    _,
 };
 
 pub const CpuSubType = union(CpuType) {
-    ARM: Arm64SubType,
+    NONE: void,
+    VAX: void,
+    ROMP: void,
+    NS32032: void,
+    NS32332: void,
+    MC680x0: void,
     x86: X86SubType,
+    MIPS: void,
+    NS32352: void,
+    @"HP-PA": void,
+    ARM: Arm64SubType,
+    MC88000: void,
+    SPARC: void,
+    i860_BIG: void,
+    i860_SMALL: void,
+    @"RS/6000": void,
+    PowerPC: void,
+    @"RISC-V": void,
 };
 
 pub const Arm64SubType = enum(std.macho.cpu_subtype_t) {
@@ -90,33 +122,31 @@ pub const X86SubType = enum(std.macho.cpu_subtype_t) {
 ///
 /// Constants for the filetype field of the mach_header
 ///
-const FileType = enum(u32) {
+pub const FileType = enum(u32) {
     /// relocatable object file
-    OBJECT = 0x1,
+    OBJECT = std.macho.MH_OBJECT,
     /// demand paged executable file
-    EXECUTE = 0x2,
+    EXECUTE = std.macho.MH_EXECUTE,
     /// fixed VM shared library file
-    FVMLIB = 0x3,
+    FVMLIB = std.macho.MH_FVMLIB,
     /// core file
-    CORE = 0x4,
+    CORE = std.macho.MH_CORE,
     /// preloaded executable file
-    PRELOAD = 0x5,
+    PRELOAD = std.macho.MH_PRELOAD,
     /// dynamically bound shared library
-    DYLIB = 0x6,
+    DYLIB = std.macho.MH_DYLIB,
     /// dynamic link editor
-    DYLINKER = 0x7,
+    DYLINKER = std.macho.MH_DYLINKER,
     /// dynamically bound bundle file
-    BUNDLE = 0x8,
+    BUNDLE = std.macho.MH_BUNDLE,
     /// shared library stub for static
     /// linking only, no section contents
-    DYLIB_STUB = 0x9,
+    DYLIB_STUB = std.macho.MH_DYLIB_STUB,
     /// companion file with only debug
     ///  sections
-    DSYM = 0xa,
+    DSYM = std.macho.MH_DSYM,
     /// x86_64 kexts
-    KEXT_BUNDLE = 0xb,
-    /// set of mach-o's
-    FILESET = 0xc,
+    KEXT_BUNDLE = std.macho.MH_KEXT_BUNDLE,
     _,
 };
 
