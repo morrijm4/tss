@@ -139,11 +139,9 @@ pub const FileType = enum(u32) {
     DYLINKER = std.macho.MH_DYLINKER,
     /// dynamically bound bundle file
     BUNDLE = std.macho.MH_BUNDLE,
-    /// shared library stub for static
-    /// linking only, no section contents
+    /// shared library stub for static linking only, no section contents
     DYLIB_STUB = std.macho.MH_DYLIB_STUB,
-    /// companion file with only debug
-    ///  sections
+    /// companion file with only debug sections
     DSYM = std.macho.MH_DSYM,
     /// x86_64 kexts
     KEXT_BUNDLE = std.macho.MH_KEXT_BUNDLE,
