@@ -1,4 +1,5 @@
 const std = @import("std");
+const mem = std.mem;
 const macho = @import("./macho.zig");
 
 pub const MachOBuilder = @This();
@@ -9,6 +10,7 @@ cpusubtype: ?macho.CpuSubType,
 filetype: ?macho.FileType,
 bit: ?macho.ArchBit,
 ptrtype: ?macho.PointerType,
+loadCommands: std.ArrayList(macho.LoadCommand),
 
 pub const MachOBuilderError = error{ MissingField, InvalidCombination };
 
@@ -20,7 +22,12 @@ pub fn init() MachOBuilder {
         .filetype = null,
         .bit = null,
         .ptrtype = null,
+        .loadCommands = .empty,
     };
+}
+
+pub fn deinit(self: *MachOBuilder, allocator: mem.Allocator) void {
+    self.loadCommands.deinit(allocator);
 }
 
 pub fn setMagic(self: *MachOBuilder, magic: macho.Magic) *MachOBuilder {
@@ -51,6 +58,10 @@ pub fn setCpuSubType(self: *MachOBuilder, cpusubtype: macho.CpuSubType) *MachOBu
 pub fn setFileType(self: *MachOBuilder, filetype: macho.FileType) *MachOBuilder {
     self.filetype = filetype;
     return self;
+}
+
+pub fn addLoadCommand(self: *MachOBuilder, gpa: mem.Allocator, cmd: macho.LoadCommand) error{OutOfMemory}!void {
+    try self.loadCommands.append(gpa, cmd);
 }
 
 pub fn buildHeader(self: *MachOBuilder) MachOBuilderError!macho.MachHeader64 {
@@ -147,4 +158,28 @@ test "it fails if cputype and cpusubtype don't match" {
 test "it fail if not all fields are present" {
     var builder = init();
     try std.testing.expectError(MachOBuilderError.MissingField, builder.buildHeader());
+}
+
+test "it appends a load command" {
+    const gpa = std.testing.allocator;
+
+    var builder = init();
+    defer builder.deinit(gpa);
+
+    const cmd: macho.UUIDCommand = .{
+        .cmd = .UUID,
+        .cmdsize = @sizeOf(macho.UUIDCommand),
+        .uuid = undefined,
+    };
+
+    const data = mem.asBytes(&cmd);
+    const lc: macho.LoadCommand = .{
+        .hdr = .{ .cmd = cmd.cmd, .cmdsize = cmd.cmdsize },
+        .data = data,
+    };
+
+    try builder.addLoadCommand(gpa, lc);
+
+    try std.testing.expectEqual(builder.loadCommands.items.len, 1);
+    try std.testing.expectEqualSlices(u8, builder.loadCommands.items[0].data, data);
 }
