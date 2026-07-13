@@ -250,23 +250,23 @@ pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
 
 pub fn printMachHeader64(self: *MachO, w: *Io.Writer) PrintError!void {
     const hdr = self.getHeader();
-    const rawcputype = @as(u32, @bitCast(hdr.cputype));
-    const rawcpusubtype = @as(u32, @bitCast(hdr.cpusubtype));
+    const raw_cpu_type = @as(u32, @bitCast(hdr.cputype));
+    const raw_cpu_subtype = @as(u32, @bitCast(hdr.cpusubtype));
 
-    const cputype = getCpuType(rawcputype);
-    const filetype = getFileType(hdr.filetype);
+    const cpu_type = getCpuType(raw_cpu_type);
+    const file_type = getFileType(hdr.filetype);
 
     var buf: [16]u8 = undefined;
-    const cpusubtype = if (cputype != null) switch (cputype.?) {
+    const cpu_subtype = if (cpu_type != null) switch (cpu_type.?) {
         .ARM => try std.fmt.bufPrint(&buf, "{?}", .{std.enums.fromInt(Arm64SubType, hdr.cpusubtype)}),
         .x86 => try std.fmt.bufPrint(&buf, "{?}", .{std.enums.fromInt(X86SubType, hdr.cpusubtype)}),
         else => null,
     } else null;
 
     try w.print("Magic => 0x{x:0>8}\n", .{hdr.magic});
-    try w.print("CPU Type => {?} (0x{x:0>8})\n", .{ cputype, rawcputype });
-    try w.print("CPU Subtype => {?s} (0x{x:0>8})\n", .{ cpusubtype, rawcpusubtype });
-    try w.print("File type => {?} (0x{x:0>8})\n", .{ filetype, hdr.filetype });
+    try w.print("CPU Type => {?} (0x{x:0>8})\n", .{ cpu_type, raw_cpu_type });
+    try w.print("CPU Subtype => {?s} (0x{x:0>8})\n", .{ cpu_subtype, raw_cpu_subtype });
+    try w.print("File type => {?} (0x{x:0>8})\n", .{ file_type, hdr.filetype });
     try w.print("Number of load commands => {}\n", .{hdr.ncmds});
     try w.print("Load commands size => {}\n", .{hdr.sizeofcmds});
     try w.print("Flags => 0b{b:0>32}\n", .{hdr.flags});
@@ -331,18 +331,18 @@ pub fn printDylibCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
     try w.print("\t- Name offset => {d}\n", .{dylib.name});
     try w.print("\t- Timestamp => {d}\n", .{dylib.timestamp});
 
-    const currv: Version = @bitCast(dylib.current_version);
+    const curr_version: Version = @bitCast(dylib.current_version);
     try w.print("\t- Current version => {d}.{d}.{d}\n", .{
-        currv.major,
-        currv.minor,
-        currv.patch,
+        curr_version.major,
+        curr_version.minor,
+        curr_version.patch,
     });
 
-    const compatv: Version = @bitCast(dylib.compatibility_version);
+    const compatibility_version: Version = @bitCast(dylib.compatibility_version);
     try w.print("\t- Compatibility version => {d}.{d}.{d}\n", .{
-        compatv.major,
-        compatv.minor,
-        compatv.patch,
+        compatibility_version.major,
+        compatibility_version.minor,
+        compatibility_version.patch,
     });
 }
 
@@ -390,8 +390,8 @@ pub fn printSymbolTable(self: *MachO, lc: LoadCommand, w: *Io.Writer) Io.Writer.
     try w.print("\t- String table size => {d}\n", .{cmd.strsize});
     try w.print("\t- Symbols:\n", .{});
 
-    const symbolSlice = self.contents[cmd.symoff..(@sizeOf(Symbol64) * cmd.nsyms + cmd.symoff)];
-    const symbols: []align(1) const Symbol64 = std.mem.bytesAsSlice(Symbol64, symbolSlice);
+    const symbol_slice = self.contents[cmd.symoff..(@sizeOf(Symbol64) * cmd.nsyms + cmd.symoff)];
+    const symbols: []align(1) const Symbol64 = std.mem.bytesAsSlice(Symbol64, symbol_slice);
     for (symbols, 0..) |sym, i| {
         const offset = cmd.stroff + sym.nameoff;
         const name = std.mem.sliceTo(self.contents[offset..], 0);
@@ -431,17 +431,17 @@ pub fn printUUIDCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
     const cmd = lc.cast(UUIDCommand).?;
     const uuid = cmd.uuid;
 
-    const timeLow = std.fmt.bytesToHex(uuid[0..4], .lower);
-    const timeMid = std.fmt.bytesToHex(uuid[4..6], .lower);
-    const timeHighAndVersion = std.fmt.bytesToHex(uuid[6..8], .lower);
-    const clockSequence = std.fmt.bytesToHex(uuid[8..10], .lower);
+    const time_low = std.fmt.bytesToHex(uuid[0..4], .lower);
+    const time_mid = std.fmt.bytesToHex(uuid[4..6], .lower);
+    const time_high_and_version = std.fmt.bytesToHex(uuid[6..8], .lower);
+    const clock_sequence = std.fmt.bytesToHex(uuid[8..10], .lower);
     const node = std.fmt.bytesToHex(uuid[10..16], .lower);
 
     try w.print("\t- UUID => {s}-{s}-{s}-{s}-{s}\n", .{
-        timeLow,
-        timeMid,
-        timeHighAndVersion,
-        clockSequence,
+        time_low,
+        time_mid,
+        time_high_and_version,
+        clock_sequence,
         node,
     });
 }

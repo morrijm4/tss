@@ -1,7 +1,7 @@
 const std = @import("std");
 pub const macho = @import("./macho.zig");
 pub const opts = @import("./opts.zig");
-pub const builder = @import("./macho-builder.zig");
+pub const builders = @import("./builders/root.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
@@ -10,11 +10,11 @@ test {
 test "it can build a header, parse, and print" {
     const gpa = std.testing.allocator;
 
-    var build: builder.MachOBuilder = .init();
+    var build: builders.macho.Builder = .init();
     const header = try build
         .setMagic(.magic64)
-        .setCpuType(.x86)
         .setPointerType(.ptr64)
+        .setCpuType(.x86)
         .setCpuSubType(.{ .x86 = .x86_ALL })
         .setFileType(.OBJECT)
         .buildHeader();

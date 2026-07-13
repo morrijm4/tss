@@ -24,8 +24,8 @@ pub fn main(init: std.process.Init) !void {
     const stdout = Io.File.stdout();
     defer stdout.close(io);
 
-    var stdoutWriter = stdout.writer(io, &buf);
-    const w = &stdoutWriter.interface;
+    var stdout_writer = stdout.writer(io, &buf);
+    const w = &stdout_writer.interface;
 
     try macho.print(w);
     try w.flush();
