@@ -21,6 +21,7 @@ pub const UUIDCommand = std.macho.uuid_command;
 pub const LinkeditDataCommand = std.macho.linkedit_data_command;
 pub const DylibCommand = std.macho.dylib_command;
 pub const Section64 = std.macho.section_64;
+pub const Symbol64 = std.macho.nlist_64;
 
 pub const CPU_TYPE_64_MASK = 0x01000000;
 pub const CPU_TYPE_64_32_PTRS_MASK = 0x02000000;
@@ -146,14 +147,6 @@ pub const FileType = enum(u32) {
     /// x86_64 kexts
     KEXT_BUNDLE = std.macho.MH_KEXT_BUNDLE,
     _,
-};
-
-pub const Symbol64 = packed struct {
-    nameoff: u32,
-    type: u8,
-    secnum: u8,
-    datainfo: u16,
-    symaddr: u64,
 };
 
 pub const Version = packed struct {
@@ -393,14 +386,18 @@ pub fn printSymbolTable(self: *MachO, lc: LoadCommand, w: *Io.Writer) Io.Writer.
     const symbol_slice = self.contents[cmd.symoff..(@sizeOf(Symbol64) * cmd.nsyms + cmd.symoff)];
     const symbols: []align(1) const Symbol64 = std.mem.bytesAsSlice(Symbol64, symbol_slice);
     for (symbols, 0..) |sym, i| {
-        const offset = cmd.stroff + sym.nameoff;
+        const offset = cmd.stroff + sym.n_strx;
         const name = std.mem.sliceTo(self.contents[offset..], 0);
         try w.print("\t\t> Name => {d}. {s}\n", .{ i, name });
-        try w.print("\t\t> Name Offset => {d}\n", .{sym.nameoff});
-        try w.print("\t\t> Type => 0b{b:0>8}\n", .{sym.type});
-        try w.print("\t\t> Section Number => {d}\n", .{sym.secnum});
-        try w.print("\t\t> Data info => {d}\n", .{sym.datainfo});
-        try w.print("\t\t> Symbol address => 0x{x:0>16}\n", .{sym.symaddr});
+        try w.print("\t\t> Name Offset => {d}\n", .{sym.n_strx});
+        if (sym.n_type.bits.is_stab == 0) {
+            try w.print("\t\t> Type bits => {}\n", .{sym.n_type.bits});
+        } else {
+            try w.print("\t\t> Type stab => {}\n", .{sym.n_type.stab});
+        }
+        try w.print("\t\t> Section Number => {d}\n", .{sym.n_sect});
+        try w.print("\t\t> Data info => {}\n", .{sym.n_desc});
+        try w.print("\t\t> Symbol address => 0x{x:0>16}\n", .{sym.n_value});
         try w.print("\n", .{});
     }
 }
