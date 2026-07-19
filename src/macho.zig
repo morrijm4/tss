@@ -18,6 +18,7 @@ pub const SymbolTableCommand = std.macho.symtab_command;
 pub const DynamicSymbolTableCommand = std.macho.dysymtab_command;
 pub const MainCommand = std.macho.entry_point_command;
 pub const UUIDCommand = std.macho.uuid_command;
+pub const DylinkerCommand = std.macho.dylinker_command;
 pub const LinkeditDataCommand = std.macho.linkedit_data_command;
 pub const DylibCommand = std.macho.dylib_command;
 pub const Section64 = std.macho.section_64;
@@ -222,6 +223,10 @@ pub fn print(self: *MachO, w: *Io.Writer) PrintError!void {
             .BUILD_VERSION => try printBuildVersionCommand(lc, w),
             .SOURCE_VERSION => try printSourceVersionCommand(lc, w),
             .UUID => try printUUIDCommand(lc, w),
+            .ID_DYLINKER,
+            .DYLD_ENVIRONMENT,
+            .LOAD_DYLINKER,
+            => try printLoadDylinkerCommand(lc, w),
             .CODE_SIGNATURE,
             .SEGMENT_SPLIT_INFO,
             .FUNCTION_STARTS,
@@ -441,6 +446,12 @@ pub fn printUUIDCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
         clock_sequence,
         node,
     });
+}
+
+pub fn printLoadDylinkerCommand(lc: LoadCommand, w: *Io.Writer) Io.Writer.Error!void {
+    const cmd = lc.cast(DylinkerCommand).?;
+    const name = std.mem.sliceTo(lc.data[cmd.name..], 0);
+    try w.print("\t- Name: {s}\n", .{name});
 }
 
 test "can print" {
