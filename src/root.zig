@@ -1,4 +1,7 @@
 const std = @import("std");
+
+const Io = std.Io;
+
 pub const macho = @import("./macho.zig");
 pub const opts = @import("./opts.zig");
 pub const builders = @import("./builders/root.zig");
@@ -10,23 +13,24 @@ test {
 test "it can build a header, parse, and print" {
     const gpa = std.testing.allocator;
 
+    var header_buf: [512]u8 = undefined;
+    var writer = Io.Writer.fixed(&header_buf);
+    var reader = Io.Reader.fixed(&header_buf);
+
     var build: builders.macho.Builder = .init();
-    const header = try build
+    try build
         .setMagic(.magic64)
         .setPointerType(.ptr64)
         .setCpuType(.x86)
         .setCpuSubType(.{ .x86 = .x86_ALL })
         .setFileType(.OBJECT)
-        .buildHeader();
-
-    const bytes = std.mem.asBytes(&header);
-    var reader = std.Io.Reader.fixed(bytes);
+        .writeHeader(&writer);
 
     var m = try macho.init(gpa, &reader);
     defer m.deinit(gpa);
 
-    var buf: [1024]u8 = undefined;
-    var discard = std.Io.Writer.Discarding.init(&buf);
+    var discard_buf: [1024]u8 = undefined;
+    var discard = Io.Writer.Discarding.init(&discard_buf);
 
     try m.print(&discard.writer);
     try discard.writer.flush();
