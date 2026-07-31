@@ -21,32 +21,29 @@ test "adding sections to a segment" {
     var writer = Io.Writer.fixed(&buf);
     var reader = Io.Reader.fixed(&buf);
 
-    const segname = "__TEXT";
-    var sect = section.Builder.init();
-    defer sect.deinit(gpa);
-    _ = sect.setSectionName("__text")
-        .setSegmentName(segname)
-        .setAlignment(2);
+    var seg = segment.Builder.init();
+    defer seg.deinit(gpa);
+    seg.setName("__TEXT");
 
+    const section_idx = try seg.addSection(gpa);
+    var sect = seg.getSection(section_idx);
+    try sect.setSectionName("__text");
+    sect.setAlignment(2);
     try sect.addInstruction(gpa, 0xd28008a0);
     try sect.addInstruction(gpa, 0xd2800030);
     try sect.addInstruction(gpa, 0xd4001001);
 
-    var seg = segment.Builder.init();
-    defer seg.deinit(gpa);
-    _ = seg.setName(segname);
-    try seg.addSection(gpa, &sect);
     const offset = try seg.writeCommand(&writer, 0);
     try seg.writeData(&writer);
 
     const segment_header = try reader.takeStruct(m.SegmentCommand64, .native);
-    try std.testing.expectEqualStrings(segname, segment_header.segName());
+    try std.testing.expectEqualStrings("__TEXT", segment_header.segName());
     try std.testing.expectEqual(@sizeOf(m.SegmentCommand64) + @sizeOf(m.Section64), segment_header.cmdsize);
     try std.testing.expectEqual(12, offset);
 
     const section_header = try reader.takeStruct(m.Section64, .native);
     try std.testing.expectEqualStrings("__text", section_header.sectName());
-    try std.testing.expectEqualStrings(segname, section_header.segName());
+    try std.testing.expectEqualStrings("__TEXT", section_header.segName());
     try std.testing.expectEqual(12, section_header.size);
     try std.testing.expectEqual(2, section_header.@"align");
 
@@ -60,26 +57,6 @@ test "adding sections to a segment" {
 test "macho builder appends a load command builder" {
     const gpa = std.testing.allocator;
 
-    var sect = section.init();
-    defer sect.deinit(gpa);
-
-    const segment_name = "__TEXT";
-    _ = sect
-        .setSegmentName(segment_name)
-        .setSectionName("__text")
-        .setAlignment(2);
-    try sect.addInstruction(gpa, 0xd28008a0);
-    try sect.addInstruction(gpa, 0xd2800030);
-    try sect.addInstruction(gpa, 0xd4001001);
-
-    var seg = segment.init();
-    defer seg.deinit(gpa);
-    _ = seg
-        .setName(segment_name)
-        .setMaxVMProtection(.{ .READ = true, .EXEC = true })
-        .setInitVMProtection(.{ .READ = true, .EXEC = true });
-    try seg.addSection(gpa, &sect);
-
     var builder = macho.init();
     defer builder.deinit(gpa);
     builder.setMagic(.magic64);
@@ -87,8 +64,20 @@ test "macho builder appends a load command builder" {
     builder.setCpuSubType(.{ .ARM = .ARM64_ALL });
     builder.setPointerType(.ptr64);
     builder.setFileType(.OBJECT);
-    var load_cmd = load_command.from(&seg);
-    try builder.addLoadCommand(gpa, &load_cmd);
+
+    const segment_idx = try builder.addLoadCommand(gpa, .segment);
+    var segment_cmd = builder.getLoadCommand(segment_idx);
+    segment_cmd.segment.setName("__TEXT");
+    segment_cmd.segment.setMaxVMProtection(.{ .READ = true, .EXEC = true });
+    segment_cmd.segment.setInitVMProtection(.{ .READ = true, .EXEC = true });
+
+    const section_idx = try segment_cmd.segment.addSection(gpa);
+    var sect = segment_cmd.segment.getSection(section_idx);
+    try sect.setSectionName("__text");
+    sect.setAlignment(2);
+    try sect.addInstruction(gpa, 0xd28008a0);
+    try sect.addInstruction(gpa, 0xd2800030);
+    try sect.addInstruction(gpa, 0xd4001001);
 
     var buf: [512]u8 = undefined;
     var writer = Io.Writer.fixed(&buf);
@@ -119,13 +108,11 @@ test "macho builder appends a load command builder" {
                 const off = @sizeOf(m.MachHeader64) + @sizeOf(m.SegmentCommand64) + @sizeOf(m.Section64);
                 try std.testing.expectEqual(off, cmd.fileoff);
                 try std.testing.expectEqual(12, cmd.filesize);
-                const prot: std.macho.vm_prot_t = .{
-                    .READ = true,
-                    .EXEC = true,
-                };
+                const prot: std.macho.vm_prot_t = .{ .READ = true, .EXEC = true };
                 try std.testing.expectEqualDeep(prot, cmd.maxprot);
                 try std.testing.expectEqualDeep(prot, cmd.initprot);
                 try std.testing.expectEqual(1, cmd.nsects);
+
                 for (lc.getSections()) |sec| {
                     try std.testing.expectEqualStrings("__text", sec.sectName());
                     try std.testing.expectEqualStrings("__TEXT", sec.segName());

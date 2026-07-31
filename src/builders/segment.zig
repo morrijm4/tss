@@ -1,14 +1,16 @@
 const std = @import("std");
 const macho = @import("../macho.zig");
-const section = @import("./section.zig");
+const sect = @import("./section.zig");
 
 const Io = std.Io;
 const mem = std.mem;
 
 pub const Builder = @This();
 
+pub const Error = mem.Allocator.Error || sect.Error;
+
 header: macho.SegmentCommand64,
-sections: std.ArrayList(section.Builder),
+sections: std.ArrayList(sect.Builder),
 
 pub fn init() Builder {
     return .{
@@ -21,65 +23,72 @@ pub fn init() Builder {
 }
 
 pub fn deinit(self: *Builder, allocator: mem.Allocator) void {
-    for (self.sections.items) |*sect| {
-        sect.deinit(allocator);
+    for (self.sections.items) |*s| {
+        s.deinit(allocator);
     }
     self.sections.deinit(allocator);
     self.sections = .empty;
 }
 
-pub fn setName(self: *Builder, comptime name: []const u8) *Builder {
+pub fn setName(self: *Builder, comptime name: []const u8) void {
     comptime if (name.len > 16) @compileError("Segment name '" ++ name ++ "' exceeds 16 bytes.");
     self.header.segname = @splat(0);
     @memcpy(self.header.segname[0..name.len], name);
-    return self;
 }
 
-pub fn setVMAddress(self: *Builder, addr: u64) *Builder {
+pub fn setVMAddress(self: *Builder, addr: u64) void {
     self.header.vmaddr = addr;
-    return self;
 }
 
-pub fn setMaxVMProtection(self: *Builder, prot: std.macho.vm_prot_t) *Builder {
+pub fn setMaxVMProtection(self: *Builder, prot: std.macho.vm_prot_t) void {
     self.header.maxprot = prot;
-    return self;
 }
 
-pub fn setInitVMProtection(self: *Builder, prot: std.macho.vm_prot_t) *Builder {
+pub fn setInitVMProtection(self: *Builder, prot: std.macho.vm_prot_t) void {
     self.header.initprot = prot;
-    return self;
 }
 
-pub fn setFlags(self: *Builder, flags: u32) *Builder {
+pub fn setFlags(self: *Builder, flags: u32) void {
     self.header.flags = flags;
-    return self;
 }
 
-// Section moves to the segment. The passed-in section is reset.
-pub fn addSection(self: *Builder, allocator: mem.Allocator, sect: *section.Builder) mem.Allocator.Error!void {
-    try self.sections.append(allocator, sect.*);
+// Returns handle to section
+pub fn addSection(self: *Builder, allocator: mem.Allocator) Error!usize {
+    var section = sect.init();
+    try section.setSegmentName(self.header.segName());
+    try self.sections.append(allocator, section);
     self.header.cmdsize += @sizeOf(macho.Section64);
-    self.header.vmsize += sect.header.size;
-    self.header.filesize += sect.header.size;
-    self.header.nsects += 1;
-    sect.* = section.init();
+    return self.sections.items.len - 1;
+}
+
+pub fn getSection(self: *Builder, idx: usize) *sect.Builder {
+    return &self.sections.items[idx];
 }
 
 /// Returns number of bytes to extend the offset
 pub fn writeCommand(self: *Builder, w: *Io.Writer, offset: u64) Io.Writer.Error!u64 {
+    var size: u64 = 0;
+    for (self.sections.items) |*section| {
+        size += section.header.size;
+    }
+
+    self.header.vmsize = size;
+    self.header.filesize = size;
     self.header.fileoff = offset;
+    self.header.nsects = @intCast(self.sections.items.len);
+
     try w.writeAll(mem.asBytes(&self.header));
 
     var off = offset;
-    for (self.sections.items) |*sect| {
-        off += try sect.writeHeader(w, off);
+    for (self.sections.items) |*s| {
+        off += try s.writeHeader(w, off);
     }
     return off;
 }
 
 pub fn writeData(self: *const Builder, w: *Io.Writer) Io.Writer.Error!void {
-    for (self.sections.items) |sect| {
-        try sect.writeData(w);
+    for (self.sections.items) |s| {
+        try s.writeData(w);
     }
 }
 
@@ -89,11 +98,27 @@ test "it can add a name" {
     var reader = Io.Reader.fixed(&buf);
 
     var builder = init();
-
-    _ = try builder.setName("__TEXT").writeCommand(&writer, 0);
+    builder.setName("__TEXT");
+    _ = try builder.writeCommand(&writer, 0);
 
     const seg = try reader.takeStruct(macho.SegmentCommand64, .native);
     try std.testing.expectEqual(.SEGMENT_64, seg.cmd);
     try std.testing.expectEqual(@sizeOf(macho.SegmentCommand64), seg.cmdsize);
     try std.testing.expectEqualSlices(u8, "__TEXT", seg.segName());
+}
+
+test "it can add a section" {
+    const gpa = std.testing.allocator;
+    var segment = init();
+    defer segment.deinit(gpa);
+    segment.setName("__TEXT");
+
+    const idx = try segment.addSection(gpa);
+    var section = segment.getSection(idx);
+    try section.setSectionName("__text");
+    section.setAlignment(2);
+
+    try std.testing.expectEqualStrings(segment.header.segName(), section.header.segName());
+    try std.testing.expectEqualStrings("__text", section.header.sectName());
+    try std.testing.expectEqual(2, section.header.@"align");
 }

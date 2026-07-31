@@ -4,15 +4,14 @@ const Io = std.Io;
 const mem = std.mem;
 
 const macho = @import("../macho.zig");
-const load_command = @import("./load-command.zig");
+const lc = @import("./load-command.zig");
 
 pub const Builder = @This();
 
 header: macho.MachHeader64,
 ptr_size: macho.PointerType,
 cpusubtype: macho.CpuSubType,
-load_commands: std.ArrayList(load_command.Builder),
-load_command_size: u32,
+load_commands: std.ArrayList(lc.Builder),
 
 pub const Error = error{ MissingField, InvalidField } || Io.Writer.Error;
 
@@ -22,13 +21,12 @@ pub fn init() Builder {
         .ptr_size = .ptr64,
         .cpusubtype = .NONE,
         .load_commands = .empty,
-        .load_command_size = 0,
     };
 }
 
 pub fn deinit(self: *Builder, allocator: mem.Allocator) void {
-    for (self.load_commands.items) |*lc| {
-        lc.deinit(allocator);
+    for (self.load_commands.items) |*cmd| {
+        cmd.deinit(allocator);
     }
     self.load_commands.deinit(allocator);
     self.load_commands = .empty;
@@ -59,14 +57,17 @@ pub fn setFileType(self: *Builder, filetype: macho.FileType) void {
     self.header.filetype = @intFromEnum(filetype);
 }
 
-/// Load command moves to the builder and is reset.
-pub fn addLoadCommand(self: *Builder, gpa: mem.Allocator, lc: *load_command.Builder) std.mem.Allocator.Error!void {
-    self.load_command_size += lc.getSize();
-    try self.load_commands.append(gpa, lc.*);
-    lc.reset();
+// Returns handle to load command
+pub fn addLoadCommand(self: *Builder, gpa: mem.Allocator, cmd: lc.LoadCommand) std.mem.Allocator.Error!usize {
+    try self.load_commands.append(gpa, lc.init(cmd));
+    return self.load_commands.items.len - 1;
 }
 
-pub fn writeHeader(self: *Builder, writer: *Io.Writer) Error!void {
+pub fn getLoadCommand(self: *Builder, idx: usize) *lc.Builder {
+    return &self.load_commands.items[idx];
+}
+
+pub fn write(self: *Builder, writer: *Io.Writer) Error!void {
     const magic = std.enums.fromInt(macho.Magic, self.header.magic);
 
     if (magic == null)
@@ -89,21 +90,21 @@ pub fn writeHeader(self: *Builder, writer: *Io.Writer) Error!void {
         },
     }
 
+    var sizeofcmds: u32 = 0;
+    for (self.load_commands.items) |*cmd| {
+        sizeofcmds += cmd.getSize();
+    }
+    self.header.sizeofcmds = sizeofcmds;
     self.header.ncmds = @intCast(self.load_commands.items.len);
-    self.header.sizeofcmds = self.load_command_size;
 
     try writer.writeStruct(self.header, .native);
-}
 
-pub fn write(self: *Builder, writer: *Io.Writer) Error!void {
-    try self.writeHeader(writer);
-
-    var offset: u64 = @sizeOf(macho.MachHeader64) + self.load_command_size;
-    for (self.load_commands.items) |*lc| {
-        offset += try lc.writeCommand(writer, offset);
+    var offset: u64 = @sizeOf(macho.MachHeader64) + self.header.sizeofcmds;
+    for (self.load_commands.items) |*cmd| {
+        offset += try cmd.writeCommand(writer, offset);
     }
-    for (self.load_commands.items) |lc| {
-        try lc.writeData(writer);
+    for (self.load_commands.items) |cmd| {
+        try cmd.writeData(writer);
     }
 }
 
@@ -119,7 +120,7 @@ test "it builds ARM" {
     var writer = Io.Writer.fixed(&buf);
     var reader = Io.Reader.fixed(&buf);
 
-    try builder.writeHeader(&writer);
+    try builder.write(&writer);
     const header = try reader.takeStruct(macho.MachHeader64, .native);
 
     try std.testing.expectEqual(std.macho.MH_MAGIC_64, header.magic);
@@ -140,7 +141,7 @@ test "it builds x86" {
     var writer = Io.Writer.fixed(&buf);
     var reader = Io.Reader.fixed(&buf);
 
-    try builder.writeHeader(&writer);
+    try builder.write(&writer);
     const header = try reader.takeStruct(macho.MachHeader64, .native);
 
     try std.testing.expectEqual(std.macho.MH_MAGIC_64, header.magic);
@@ -160,12 +161,27 @@ test "it fails if cputype and cpusubtype don't match" {
     var buf: [64]u8 = undefined;
     var writer = Io.Writer.fixed(&buf);
 
-    try std.testing.expectError(Error.InvalidField, builder.writeHeader(&writer));
+    try std.testing.expectError(Error.InvalidField, builder.write(&writer));
 }
 
 test "it fail if not all fields are present" {
     var builder = init();
     var buf: [64]u8 = undefined;
     var writer = Io.Writer.fixed(&buf);
-    try std.testing.expectError(Error.MissingField, builder.writeHeader(&writer));
+    try std.testing.expectError(Error.MissingField, builder.write(&writer));
+}
+
+test "it can create a segment" {
+    const gpa = std.testing.allocator;
+
+    var builder = init();
+    defer builder.deinit(gpa);
+
+    const idx = try builder.addLoadCommand(gpa, .segment);
+    var cmd = builder.getLoadCommand(idx);
+    cmd.segment.setName("__TEXT");
+    cmd.segment.setMaxVMProtection(.{ .READ = true, .EXEC = true });
+    cmd.segment.setInitVMProtection(.{ .READ = true, .EXEC = true });
+
+    try std.testing.expectEqualStrings("__TEXT", cmd.segment.header.segName());
 }

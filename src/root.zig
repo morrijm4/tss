@@ -23,7 +23,7 @@ test "it can build a header, parse, and print" {
     build.setCpuType(.x86);
     build.setCpuSubType(.{ .x86 = .x86_ALL });
     build.setFileType(.OBJECT);
-    try build.writeHeader(&writer);
+    try build.write(&writer);
 
     var m = try macho.init(gpa, &reader);
     defer m.deinit(gpa);
