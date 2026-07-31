@@ -18,13 +18,12 @@ test "it can build a header, parse, and print" {
     var reader = Io.Reader.fixed(&header_buf);
 
     var build: builders.macho.Builder = .init();
-    try build
-        .setMagic(.magic64)
-        .setPointerType(.ptr64)
-        .setCpuType(.x86)
-        .setCpuSubType(.{ .x86 = .x86_ALL })
-        .setFileType(.OBJECT)
-        .writeHeader(&writer);
+    build.setMagic(.magic64);
+    build.setPointerType(.ptr64);
+    build.setCpuType(.x86);
+    build.setCpuSubType(.{ .x86 = .x86_ALL });
+    build.setFileType(.OBJECT);
+    try build.writeHeader(&writer);
 
     var m = try macho.init(gpa, &reader);
     defer m.deinit(gpa);

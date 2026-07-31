@@ -82,12 +82,11 @@ test "macho builder appends a load command builder" {
 
     var builder = macho.init();
     defer builder.deinit(gpa);
-    const self = builder
-        .setMagic(.magic64)
-        .setCpuType(.ARM)
-        .setCpuSubType(.{ .ARM = .ARM64_ALL })
-        .setPointerType(.ptr64)
-        .setFileType(.OBJECT);
+    builder.setMagic(.magic64);
+    builder.setCpuType(.ARM);
+    builder.setCpuSubType(.{ .ARM = .ARM64_ALL });
+    builder.setPointerType(.ptr64);
+    builder.setFileType(.OBJECT);
     var load_cmd = load_command.from(&seg);
     try builder.addLoadCommand(gpa, &load_cmd);
 
@@ -99,7 +98,6 @@ test "macho builder appends a load command builder" {
 
     const header = try reader.takeStruct(m.MachHeader64, .native);
 
-    try std.testing.expectEqual(&builder, self);
     try std.testing.expectEqual(std.macho.MH_MAGIC_64, header.magic);
     try std.testing.expectEqual(std.macho.CPU_TYPE_ARM64, header.cputype);
     try std.testing.expectEqual(std.macho.CPU_SUBTYPE_ARM_ALL, header.cpusubtype);

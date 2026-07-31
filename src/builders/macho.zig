@@ -18,9 +18,9 @@ pub const Error = error{ MissingField, InvalidField } || Io.Writer.Error;
 
 pub fn init() Builder {
     return .{
-        .header = mem.zeroes(macho.MachHeader64),
-        .cpusubtype = .NONE,
+        .header = mem.zeroInit(macho.MachHeader64, .{}),
         .ptr_size = .ptr64,
+        .cpusubtype = .NONE,
         .load_commands = .empty,
         .load_command_size = 0,
     };
@@ -34,34 +34,29 @@ pub fn deinit(self: *Builder, allocator: mem.Allocator) void {
     self.load_commands = .empty;
 }
 
-pub fn setMagic(self: *Builder, magic: macho.Magic) *Builder {
+pub fn setMagic(self: *Builder, magic: macho.Magic) void {
     self.header.magic = @intFromEnum(magic);
-    return self;
 }
 
-pub fn setCpuType(self: *Builder, cputype: macho.CpuType) *Builder {
+pub fn setCpuType(self: *Builder, cputype: macho.CpuType) void {
     self.header.cputype = @intFromEnum(cputype);
-    return self;
 }
 
-pub fn setPointerType(self: *Builder, ptrtype: macho.PointerType) *Builder {
+pub fn setPointerType(self: *Builder, ptrtype: macho.PointerType) void {
     self.ptr_size = ptrtype;
-    return self;
 }
 
-pub fn setCpuSubType(self: *Builder, cpusubtype: macho.CpuSubType) *Builder {
+pub fn setCpuSubType(self: *Builder, cpusubtype: macho.CpuSubType) void {
     self.cpusubtype = cpusubtype;
     switch (cpusubtype) {
         .x86 => |t| self.header.cpusubtype = @intFromEnum(t),
         .ARM => |t| self.header.cpusubtype = @intFromEnum(t),
         else => {},
     }
-    return self;
 }
 
-pub fn setFileType(self: *Builder, filetype: macho.FileType) *Builder {
+pub fn setFileType(self: *Builder, filetype: macho.FileType) void {
     self.header.filetype = @intFromEnum(filetype);
-    return self;
 }
 
 /// Load command moves to the builder and is reset.
@@ -114,21 +109,19 @@ pub fn write(self: *Builder, writer: *Io.Writer) Error!void {
 
 test "it builds ARM" {
     var builder = init();
-    const self = builder
-        .setMagic(.magic64)
-        .setCpuType(.ARM)
-        .setPointerType(.ptr64)
-        .setCpuSubType(.{ .ARM = .ARM64_ALL })
-        .setFileType(.OBJECT);
+    builder.setMagic(.magic64);
+    builder.setCpuType(.ARM);
+    builder.setPointerType(.ptr64);
+    builder.setCpuSubType(.{ .ARM = .ARM64_ALL });
+    builder.setFileType(.OBJECT);
 
     var buf: [64]u8 = undefined;
     var writer = Io.Writer.fixed(&buf);
     var reader = Io.Reader.fixed(&buf);
 
-    try self.writeHeader(&writer);
+    try builder.writeHeader(&writer);
     const header = try reader.takeStruct(macho.MachHeader64, .native);
 
-    try std.testing.expectEqual(&builder, self);
     try std.testing.expectEqual(std.macho.MH_MAGIC_64, header.magic);
     try std.testing.expectEqual(std.macho.CPU_TYPE_ARM64, header.cputype);
     try std.testing.expectEqual(std.macho.CPU_SUBTYPE_ARM_ALL, header.cpusubtype);
@@ -137,21 +130,19 @@ test "it builds ARM" {
 
 test "it builds x86" {
     var builder = init();
-    const self = builder
-        .setMagic(.magic64)
-        .setCpuType(.x86)
-        .setPointerType(.ptr64)
-        .setCpuSubType(.{ .x86 = .x86_ALL })
-        .setFileType(.OBJECT);
+    builder.setMagic(.magic64);
+    builder.setCpuType(.x86);
+    builder.setPointerType(.ptr64);
+    builder.setCpuSubType(.{ .x86 = .x86_ALL });
+    builder.setFileType(.OBJECT);
 
     var buf: [64]u8 = undefined;
     var writer = Io.Writer.fixed(&buf);
     var reader = Io.Reader.fixed(&buf);
 
-    try self.writeHeader(&writer);
+    try builder.writeHeader(&writer);
     const header = try reader.takeStruct(macho.MachHeader64, .native);
 
-    try std.testing.expectEqual(&builder, self);
     try std.testing.expectEqual(std.macho.MH_MAGIC_64, header.magic);
     try std.testing.expectEqual(std.macho.CPU_TYPE_X86_64, header.cputype);
     try std.testing.expectEqual(std.macho.CPU_SUBTYPE_X86_64_ALL, header.cpusubtype);
@@ -160,22 +151,21 @@ test "it builds x86" {
 
 test "it fails if cputype and cpusubtype don't match" {
     var builder = init();
-    const self = builder
-        .setMagic(.magic64)
-        .setCpuType(.x86)
-        .setPointerType(.ptr64)
-        .setCpuSubType(.{ .ARM = .ARM64_ALL })
-        .setFileType(.OBJECT);
+    builder.setMagic(.magic64);
+    builder.setCpuType(.x86);
+    builder.setPointerType(.ptr64);
+    builder.setCpuSubType(.{ .ARM = .ARM64_ALL });
+    builder.setFileType(.OBJECT);
 
     var buf: [64]u8 = undefined;
     var writer = Io.Writer.fixed(&buf);
 
-    try std.testing.expectError(Error.InvalidField, self.writeHeader(&writer));
+    try std.testing.expectError(Error.InvalidField, builder.writeHeader(&writer));
 }
 
 test "it fail if not all fields are present" {
     var builder = init();
     var buf: [64]u8 = undefined;
     var writer = Io.Writer.fixed(&buf);
-    try std.testing.expectError(Error.InvalidField, builder.writeHeader(&writer));
+    try std.testing.expectError(Error.MissingField, builder.writeHeader(&writer));
 }
