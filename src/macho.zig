@@ -34,11 +34,6 @@ pub const Magic = enum(u32) {
     cigam64 = std.macho.MH_CIGAM_64,
 };
 
-pub const ArchBit = enum {
-    bit32,
-    bit64,
-};
-
 pub const PointerType = enum {
     ptr32,
     ptr64,

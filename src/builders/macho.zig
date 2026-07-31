@@ -8,25 +8,19 @@ const load_command = @import("./load-command.zig");
 
 pub const Builder = @This();
 
-magic: ?macho.Magic,
-cpu_type: ?macho.CpuType,
-cpu_subtype: ?macho.CpuSubType,
-file_type: ?macho.FileType,
-bit: ?macho.ArchBit,
-ptr_size: ?macho.PointerType,
+header: macho.MachHeader64,
+ptr_size: macho.PointerType,
+cpusubtype: macho.CpuSubType,
 load_commands: std.ArrayList(load_command.Builder),
 load_command_size: u32,
 
-pub const Error = error{ MissingField, InvalidCombination } || Io.Writer.Error;
+pub const Error = error{ MissingField, InvalidField } || Io.Writer.Error;
 
 pub fn init() Builder {
     return .{
-        .magic = null,
-        .cpu_type = null,
-        .cpu_subtype = null,
-        .file_type = null,
-        .bit = null,
-        .ptr_size = null,
+        .header = mem.zeroes(macho.MachHeader64),
+        .cpusubtype = .NONE,
+        .ptr_size = .ptr64,
         .load_commands = .empty,
         .load_command_size = 0,
     };
@@ -41,17 +35,12 @@ pub fn deinit(self: *Builder, allocator: mem.Allocator) void {
 }
 
 pub fn setMagic(self: *Builder, magic: macho.Magic) *Builder {
-    switch (magic) {
-        .magic64, .cigam64 => self.bit = .bit64,
-        .magic32, .cigam32 => self.bit = .bit32,
-    }
-
-    self.magic = magic;
+    self.header.magic = @intFromEnum(magic);
     return self;
 }
 
 pub fn setCpuType(self: *Builder, cputype: macho.CpuType) *Builder {
-    self.cpu_type = cputype;
+    self.header.cputype = @intFromEnum(cputype);
     return self;
 }
 
@@ -61,12 +50,17 @@ pub fn setPointerType(self: *Builder, ptrtype: macho.PointerType) *Builder {
 }
 
 pub fn setCpuSubType(self: *Builder, cpusubtype: macho.CpuSubType) *Builder {
-    self.cpu_subtype = cpusubtype;
+    self.cpusubtype = cpusubtype;
+    switch (cpusubtype) {
+        .x86 => |t| self.header.cpusubtype = @intFromEnum(t),
+        .ARM => |t| self.header.cpusubtype = @intFromEnum(t),
+        else => {},
+    }
     return self;
 }
 
 pub fn setFileType(self: *Builder, filetype: macho.FileType) *Builder {
-    self.file_type = filetype;
+    self.header.filetype = @intFromEnum(filetype);
     return self;
 }
 
@@ -78,48 +72,32 @@ pub fn addLoadCommand(self: *Builder, gpa: mem.Allocator, lc: *load_command.Buil
 }
 
 pub fn writeHeader(self: *Builder, writer: *Io.Writer) Error!void {
-    if (self.magic == null or
-        self.cpu_type == null or
-        self.cpu_subtype == null or
-        self.file_type == null or
-        self.bit == null or
-        self.ptr_size == null)
+    const magic = std.enums.fromInt(macho.Magic, self.header.magic);
+
+    if (magic == null)
+        return Error.InvalidField;
+
+    if (self.header.cputype == 0 or self.header.filetype == 0)
         return Error.MissingField;
 
-    const cputype = self.cpu_type.?;
-    const cpusubtype = self.cpu_subtype.?;
+    if (self.header.cputype != @intFromEnum(self.cpusubtype))
+        return Error.InvalidField;
 
-    if (cputype != cpusubtype) return Error.InvalidCombination;
-
-    var hdr: macho.MachHeader64 = .{
-        .magic = @intFromEnum(self.magic.?),
-        .cputype = @intFromEnum(cputype),
-        .filetype = @intFromEnum(self.file_type.?),
-        .ncmds = @intCast(self.load_commands.items.len),
-        .sizeofcmds = self.load_command_size,
-    };
-
-    hdr.cpusubtype = switch (cpusubtype) {
-        .ARM => |s| @intFromEnum(s),
-        .x86 => |s| @intFromEnum(s),
-        else => 0,
-    };
-
-    const bit = self.bit.?;
-    const ptrtype = self.ptr_size.?;
-
-    switch (bit) {
-        .bit64 => switch (ptrtype) {
-            .ptr64 => hdr.cputype |= macho.CPU_TYPE_64_MASK,
-            .ptr32 => hdr.cputype |= macho.CPU_TYPE_64_32_PTRS_MASK,
+    switch (magic.?) {
+        .magic64, .cigam64 => switch (self.ptr_size) {
+            .ptr64 => self.header.cputype |= macho.CPU_TYPE_64_MASK,
+            .ptr32 => self.header.cputype |= macho.CPU_TYPE_64_32_PTRS_MASK,
         },
-        .bit32 => switch (ptrtype) {
-            .ptr64 => return Error.InvalidCombination,
+        .magic32, .cigam32 => switch (self.ptr_size) {
+            .ptr64 => return Error.InvalidField,
             .ptr32 => {},
         },
     }
 
-    try writer.writeStruct(hdr, .native);
+    self.header.ncmds = @intCast(self.load_commands.items.len);
+    self.header.sizeofcmds = self.load_command_size;
+
+    try writer.writeStruct(self.header, .native);
 }
 
 pub fn write(self: *Builder, writer: *Io.Writer) Error!void {
@@ -192,12 +170,12 @@ test "it fails if cputype and cpusubtype don't match" {
     var buf: [64]u8 = undefined;
     var writer = Io.Writer.fixed(&buf);
 
-    try std.testing.expectError(Error.InvalidCombination, self.writeHeader(&writer));
+    try std.testing.expectError(Error.InvalidField, self.writeHeader(&writer));
 }
 
 test "it fail if not all fields are present" {
     var builder = init();
     var buf: [64]u8 = undefined;
     var writer = Io.Writer.fixed(&buf);
-    try std.testing.expectError(Error.MissingField, builder.writeHeader(&writer));
+    try std.testing.expectError(Error.InvalidField, builder.writeHeader(&writer));
 }
