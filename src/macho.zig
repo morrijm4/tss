@@ -145,6 +145,19 @@ pub const FileType = enum(u32) {
     _,
 };
 
+pub const BuildToolVersion = packed struct {
+    tool: enum(u32) {
+        CLANG = 0x1,
+        SWIFT = 0x2,
+        LD = 0x3,
+        LLD = 0x4, // LLVM's stock LLD linker
+        ZIG = 0x5, // Unofficially Zig
+        TSS = 0x6, // Unofficially tss
+        _,
+    },
+    version: u32,
+};
+
 pub const Version = packed struct {
     patch: u8,
     minor: u8,

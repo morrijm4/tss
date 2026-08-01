@@ -8,6 +8,7 @@ const m = @import("../macho.zig");
 pub const macho = @import("./macho.zig");
 pub const segment = @import("./segment.zig");
 pub const section = @import("./section.zig");
+pub const build_version = @import("./build-version.zig");
 pub const load_command = @import("./load-command.zig");
 
 test {
