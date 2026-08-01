@@ -53,7 +53,7 @@ pub fn setFlags(self: *Builder, flags: u32) void {
 }
 
 // Returns handle to section
-pub fn addSection(self: *Builder, allocator: mem.Allocator) Error!usize {
+pub fn createSection(self: *Builder, allocator: mem.Allocator) Error!usize {
     var section = sect.init();
     try section.setSegmentName(self.header.segName());
     try self.sections.append(allocator, section);
@@ -61,7 +61,7 @@ pub fn addSection(self: *Builder, allocator: mem.Allocator) Error!usize {
     return self.sections.items.len - 1;
 }
 
-pub fn getSection(self: *Builder, idx: usize) *sect.Builder {
+pub fn getSectionRef(self: *Builder, idx: usize) *sect.Builder {
     return &self.sections.items[idx];
 }
 
@@ -113,8 +113,8 @@ test "it can add a section" {
     defer segment.deinit(gpa);
     segment.setName("__TEXT");
 
-    const idx = try segment.addSection(gpa);
-    var section = segment.getSection(idx);
+    const idx = try segment.createSection(gpa);
+    var section = segment.getSectionRef(idx);
     try section.setSectionName("__text");
     section.setAlignment(2);
 

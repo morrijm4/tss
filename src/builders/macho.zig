@@ -58,12 +58,12 @@ pub fn setFileType(self: *Builder, filetype: macho.FileType) void {
 }
 
 // Returns handle to load command
-pub fn addLoadCommand(self: *Builder, gpa: mem.Allocator, cmd: lc.LoadCommand) std.mem.Allocator.Error!usize {
+pub fn createLoadCommand(self: *Builder, gpa: mem.Allocator, cmd: lc.LoadCommand) std.mem.Allocator.Error!usize {
     try self.load_commands.append(gpa, lc.init(cmd));
     return self.load_commands.items.len - 1;
 }
 
-pub fn getLoadCommand(self: *Builder, idx: usize) *lc.Builder {
+pub fn getLoadCommandRef(self: *Builder, idx: usize) *lc.Builder {
     return &self.load_commands.items[idx];
 }
 
@@ -177,8 +177,8 @@ test "it can create a segment" {
     var builder = init();
     defer builder.deinit(gpa);
 
-    const idx = try builder.addLoadCommand(gpa, .segment);
-    var cmd = builder.getLoadCommand(idx);
+    const idx = try builder.createLoadCommand(gpa, .segment);
+    var cmd = builder.getLoadCommandRef(idx);
     cmd.segment.setName("__TEXT");
     cmd.segment.setMaxVMProtection(.{ .READ = true, .EXEC = true });
     cmd.segment.setInitVMProtection(.{ .READ = true, .EXEC = true });

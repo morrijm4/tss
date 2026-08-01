@@ -25,8 +25,8 @@ test "adding sections to a segment" {
     defer seg.deinit(gpa);
     seg.setName("__TEXT");
 
-    const section_idx = try seg.addSection(gpa);
-    var sect = seg.getSection(section_idx);
+    const section_idx = try seg.createSection(gpa);
+    var sect = seg.getSectionRef(section_idx);
     try sect.setSectionName("__text");
     sect.setAlignment(2);
     try sect.addInstruction(gpa, 0xd28008a0);
@@ -65,14 +65,14 @@ test "macho builder appends a load command builder" {
     builder.setPointerType(.ptr64);
     builder.setFileType(.OBJECT);
 
-    const segment_idx = try builder.addLoadCommand(gpa, .segment);
-    var segment_cmd = builder.getLoadCommand(segment_idx);
+    const segment_idx = try builder.createLoadCommand(gpa, .segment);
+    var segment_cmd = builder.getLoadCommandRef(segment_idx);
     segment_cmd.segment.setName("__TEXT");
     segment_cmd.segment.setMaxVMProtection(.{ .READ = true, .EXEC = true });
     segment_cmd.segment.setInitVMProtection(.{ .READ = true, .EXEC = true });
 
-    const section_idx = try segment_cmd.segment.addSection(gpa);
-    var sect = segment_cmd.segment.getSection(section_idx);
+    const section_idx = try segment_cmd.segment.createSection(gpa);
+    var sect = segment_cmd.segment.getSectionRef(section_idx);
     try sect.setSectionName("__text");
     sect.setAlignment(2);
     try sect.addInstruction(gpa, 0xd28008a0);
