@@ -80,6 +80,12 @@ test "macho builder appends a load command builder" {
     try sect.addInstruction(gpa, 0xd2800030);
     try sect.addInstruction(gpa, 0xd4001001);
 
+    const build_version_idx = try builder.createLoadCommand(gpa, .build_version);
+    var build_version_cmd = builder.getLoadCommandRef(build_version_idx);
+    build_version_cmd.build_version.setPlatform(.MACOS);
+    build_version_cmd.build_version.setMinOS(.{ .major = 26, .minor = 0, .patch = 0 });
+    build_version_cmd.build_version.setSDKVersion(.{ .major = 0, .minor = 0, .patch = 0 });
+
     var buf: [512]u8 = undefined;
     var writer = Io.Writer.fixed(&buf);
     var reader = Io.Reader.fixed(&buf);
@@ -92,12 +98,18 @@ test "macho builder appends a load command builder" {
     try std.testing.expectEqual(std.macho.CPU_TYPE_ARM64, header.cputype);
     try std.testing.expectEqual(std.macho.CPU_SUBTYPE_ARM_ALL, header.cpusubtype);
     try std.testing.expectEqual(std.macho.MH_OBJECT, header.filetype);
-    try std.testing.expectEqual(1, header.ncmds);
-    try std.testing.expectEqual(152, header.sizeofcmds);
-    try std.testing.expectEqual(builder.load_commands.items.len, 1);
+    try std.testing.expectEqual(2, header.ncmds);
+    try std.testing.expectEqual(184, header.sizeofcmds);
 
     const cmds = try reader.take(header.sizeofcmds);
     var it = try std.macho.LoadCommandIterator.init(&header, cmds);
+
+    const off =
+        @sizeOf(m.MachHeader64) +
+        @sizeOf(m.SegmentCommand64) +
+        @sizeOf(m.Section64) +
+        @sizeOf(m.BuildVersionCommand) +
+        @sizeOf(m.BuildToolVersion);
 
     while (try it.next()) |lc| {
         switch (lc.hdr.cmd) {
@@ -106,7 +118,6 @@ test "macho builder appends a load command builder" {
                 try std.testing.expectEqualStrings("__TEXT", cmd.segName());
                 try std.testing.expectEqual(0, cmd.vmaddr);
                 try std.testing.expectEqual(12, cmd.vmsize);
-                const off = @sizeOf(m.MachHeader64) + @sizeOf(m.SegmentCommand64) + @sizeOf(m.Section64);
                 try std.testing.expectEqual(off, cmd.fileoff);
                 try std.testing.expectEqual(12, cmd.filesize);
                 const prot: std.macho.vm_prot_t = .{ .READ = true, .EXEC = true };
@@ -122,6 +133,16 @@ test "macho builder appends a load command builder" {
                     try std.testing.expectEqual(off, sec.offset);
                     try std.testing.expectEqual(2, sec.@"align");
                 }
+            },
+            .BUILD_VERSION => {
+                const cmd = lc.cast(m.BuildVersionCommand).?;
+                try std.testing.expectEqual(32, cmd.cmdsize);
+                try std.testing.expectEqual(.MACOS, cmd.platform);
+                const minos: u32 = @bitCast(m.Version{ .major = 26, .minor = 0, .patch = 0 });
+                try std.testing.expectEqual(minos, cmd.minos);
+                const sdk: u32 = @bitCast(m.Version{ .major = 0, .minor = 0, .patch = 0 });
+                try std.testing.expectEqual(sdk, cmd.sdk);
+                try std.testing.expectEqual(1, cmd.ntools);
             },
             else => unreachable,
         }
