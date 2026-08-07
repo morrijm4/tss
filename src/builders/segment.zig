@@ -83,13 +83,20 @@ pub fn writeCommand(self: *Builder, w: *Io.Writer, offset: u64) Io.Writer.Error!
     for (self.sections.items) |*s| {
         off += try s.writeHeader(w, off);
     }
-    return off;
+    return size + self.getPadSize();
 }
 
 pub fn writeData(self: *const Builder, w: *Io.Writer) Io.Writer.Error!void {
     for (self.sections.items) |s| {
         try s.writeData(w);
     }
+    try w.splatByteAll(0, self.getPadSize());
+}
+
+fn getPadSize(self: *const Builder) u32 {
+    const alignment = 8;
+    const size: u32 = @intCast(self.header.filesize);
+    return alignment - (size % alignment);
 }
 
 test "it can add a name" {

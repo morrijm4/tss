@@ -40,7 +40,7 @@ pub fn setAlignment(self: *Builder, alignment: u32) void {
     self.header.@"align" = alignment;
 }
 
-pub fn setFlags(self: *Builder, flags: u32) *Builder {
+pub fn setFlags(self: *Builder, flags: u32) void {
     self.header.flags = flags;
 }
 
@@ -53,7 +53,7 @@ pub fn addInstruction(self: *Builder, allocator: std.mem.Allocator, inst: u32) s
 pub fn writeHeader(self: *Builder, w: *std.Io.Writer, offset: u64) std.Io.Writer.Error!u64 {
     self.header.offset = @intCast(offset); // TODO: why do I have to cast this?
     try w.writeAll(std.mem.asBytes(&self.header));
-    return offset + self.header.size;
+    return self.header.size;
 }
 
 pub fn writeData(self: *const Builder, w: *std.Io.Writer) std.Io.Writer.Error!void {

@@ -44,10 +44,9 @@ pub fn setSDKVersion(self: *Builder, sdk: macho.Version) void {
     self.header.sdk = @bitCast(sdk);
 }
 
-pub fn writeCommand(self: *Builder, w: *Io.Writer, offset: u64) Io.Writer.Error!u64 {
+pub fn writeCommand(self: *Builder, w: *Io.Writer) Io.Writer.Error!void {
     try w.writeStruct(self.header, .native);
     try w.writeStruct(self.tool, .native);
-    return offset + self.header.cmdsize;
 }
 
 test "uses default version" {

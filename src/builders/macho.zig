@@ -68,21 +68,22 @@ pub fn getLoadCommandRef(self: *Builder, idx: usize) *lc.Builder {
 }
 
 pub fn write(self: *Builder, writer: *Io.Writer) Error!void {
-    const magic = std.enums.fromInt(macho.Magic, self.header.magic);
+    var hdr: macho.MachHeader64 = self.header;
+    const magic = std.enums.fromInt(macho.Magic, hdr.magic);
 
     if (magic == null)
         return Error.InvalidField;
 
-    if (self.header.cputype == 0 or self.header.filetype == 0)
+    if (hdr.cputype == 0 or hdr.filetype == 0)
         return Error.MissingField;
 
-    if (self.header.cputype != @intFromEnum(self.cpusubtype))
+    if (hdr.cputype != @intFromEnum(self.cpusubtype))
         return Error.InvalidField;
 
     switch (magic.?) {
         .magic64, .cigam64 => switch (self.ptr_size) {
-            .ptr64 => self.header.cputype |= macho.CPU_TYPE_64_MASK,
-            .ptr32 => self.header.cputype |= macho.CPU_TYPE_64_32_PTRS_MASK,
+            .ptr64 => hdr.cputype |= macho.CPU_TYPE_64_MASK,
+            .ptr32 => hdr.cputype |= macho.CPU_TYPE_64_32_PTRS_MASK,
         },
         .magic32, .cigam32 => switch (self.ptr_size) {
             .ptr64 => return Error.InvalidField,
@@ -94,12 +95,12 @@ pub fn write(self: *Builder, writer: *Io.Writer) Error!void {
     for (self.load_commands.items) |*cmd| {
         sizeofcmds += cmd.getSize();
     }
-    self.header.sizeofcmds = sizeofcmds;
-    self.header.ncmds = @intCast(self.load_commands.items.len);
+    hdr.sizeofcmds = sizeofcmds;
+    hdr.ncmds = @intCast(self.load_commands.items.len);
 
-    try writer.writeStruct(self.header, .native);
+    try writer.writeStruct(hdr, .native);
 
-    var offset: u64 = @sizeOf(macho.MachHeader64) + self.header.sizeofcmds;
+    var offset: u64 = @sizeOf(macho.MachHeader64) + hdr.sizeofcmds;
     for (self.load_commands.items) |*cmd| {
         offset += try cmd.writeCommand(writer, offset);
     }
