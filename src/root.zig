@@ -5,6 +5,7 @@ const Io = std.Io;
 pub const macho = @import("./macho.zig");
 pub const opts = @import("./opts.zig");
 pub const builders = @import("./builders/root.zig");
+pub const commands = @import("./commands/root.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

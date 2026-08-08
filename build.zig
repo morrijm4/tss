@@ -45,6 +45,7 @@ pub fn build(b: *std.Build) !void {
     const version = try std.SemanticVersion.parse(manifest.version);
     const options = b.addOptions();
     options.addOption(std.SemanticVersion, "semver", version);
+    options.addOption([]const u8, "version", manifest.version);
     mod.addOptions("build-options", options);
 
     // Here we define an executable. An executable needs to have a root module

@@ -471,7 +471,7 @@ test "can print" {
     var buf: [4096]u8 = undefined;
 
     for (files) |file| {
-        const opt = try opts.init(io, &[_][:0]const u8{ "./tss", file });
+        const opt = try opts.init(io, &[_][:0]const u8{ "./tss", "objdump", file });
 
         var reader = opt.bin.reader(io, &buf);
         var macho = try init(gpa, &reader.interface);
